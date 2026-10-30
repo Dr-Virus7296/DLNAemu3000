@@ -1,0 +1,14 @@
+#EXTM3U
+
+#EXTINF:-1, Record Reggae
+http://radiorecord.hostingradio.ru/reggae96.aacp?.mp3
+
+#EXTINF:-1, Caprice Reggae
+http://79.120.39.202:8000/reggae?.mp3
+
+#EXTINF:-1, 101ru Reggae
+http://pub0201.101.ru:8000/stream/pro/aac/64/88?.mp3
+
+#EXTINF:-1, 1.FM - Reggae Trade
+https://strmreg.1.fm/reggae_mobile_mp3?.mp3
+

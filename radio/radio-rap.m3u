@@ -1,0 +1,23 @@
+#EXTM3U
+#EXTINF:-1,Studio21
+http://78.140.197.238:9877/msk_studio21?.mp3
+#EXTINF:-1,Record Black Rap
+https://radiorecord.hostingradio.ru/yo96.aacp?.mp3
+#EXTINF:-1,Record Rap Classics
+https://radiorecord.hostingradio.ru/rapclassics96.aacp?.mp3
+#EXTINF:-1,Record Rap Hits
+https://radiorecord.hostingradio.ru/rap96.aacp?.mp3
+#EXTINF:-1,Record Mayatnik fuko
+https://radiorecord.hostingradio.ru/mf96.aacp?.mp3
+#EXTINF:-1,DFM rap
+https://dfm-dfmrap.hostingradio.ru/dfmrap96.aacp?.mp3
+#EXTINF:-1,DFM Gangsta Deep
+https://dfm-gangstadeep.hostingradio.ru/gangstadeep96.aacp?.mp3
+#EXTINF:-1,DFM kalyan rap
+https://dfm-kalianrap.hostingradio.ru/kalianrap96.aacp?.mp3
+#EXTINF:-1,Europa Plus - URBAN
+https://epdop.hostingradio.ru:8033/ep-urban128.mp3
+#EXTINF:-1,Sol Rap
+http://solfm.ru:8000/rap128?.mp3
+#EXTINF:-1,YasenBit
+http://radio.yasenbit.net:8000/yasenbit192k?.mp3

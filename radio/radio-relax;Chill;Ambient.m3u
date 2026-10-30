@@ -1,0 +1,41 @@
+#EXTM3U
+#EXTINF:-1,RelaxFM
+https://gpm.hostingradio.ru/gpm-relaxfm495.aacp?.mp3
+#EXTINF:-1,RelaxFM nature
+https://pub0101.101.ru/stream/trust/mp3/128/263?.mp3
+#EXTINF:-1,Rain
+https://2.mystreaming.net/uber/calmrain/icecast.audio?.mp3
+#EXTINF:-1,ABC lounge
+https://str1.openstream.co/589?aw_0_1st.collectionid%3D3139%26stationId%3D3139%26publisherId%3D613%26k%3D1700306187?.mp3
+#EXTINF:-1,Radio Alex
+https://listen7.myradio24.com/avmarushak?42ff?.mp3
+#EXTINF:-1,Radio Atmosfera
+https://listen10.myradio24.com/atmo?.mp3
+#EXTINF:-1,Radio chillout
+https://listen2.myradio24.com/8795?8e8938fa?.mp3
+#EXTINF:-1,New Age Radio
+https://a7.radioheart.ru:8044/newageradio?e93b?.mp3
+#EXTINF:-1,Caprice Lounge
+http://79.111.14.76:8000/lounge?.mp3
+#EXTINF:-1,Caprice downtempo
+http://79.120.77.11:8000/downtempo?.mp3
+#EXTINF:-1,Caprice relaxation
+http://79.120.39.202:8000/relaxation?.mp3
+#EXTINF:-1,Caprice erotic
+http://79.120.39.202:8000/erotic?.mp3
+#EXTINF:-1,Record Summer lounge
+https://radiorecord.hostingradio.ru/summerlounge96.aacp?.mp3
+#EXTINF:-1,Record Ambient
+https://radiorecord.hostingradio.ru/ambient96.aacp?.mp3
+#EXTINF:-1,Record Christmas chill
+https://radiorecord.hostingradio.ru/christmaschill96.aacp?.mp3
+#EXTINF:-1,Record Chill-Out
+https://radiorecord.hostingradio.ru/chil96.aacp?.mp3
+#EXTINF:-1,Record Chill House
+https://radiorecord.hostingradio.ru/chillhouse96.aacp?.mp3
+#EXTINF:-1,Record Lo-Fi
+https://radiorecord.hostingradio.ru/lofi96.aacp?.mp3
+#EXTINF:-1,Record Lo-Fi House
+https://radiorecord.hostingradio.ru/lofihouse96.aacp?.mp3
+#EXTINF:-1,DFM chill
+https://dfm-dfmchill.hostingradio.ru/dfmchill96.aacp?.mp3

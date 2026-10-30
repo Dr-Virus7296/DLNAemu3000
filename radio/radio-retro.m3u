@@ -1,0 +1,47 @@
+#EXTM3U
+
+#EXTINF:-1, RetroFM
+http://retroserver.streamr.ru:8043/retro256.mp3
+
+#EXTINF:-1, RetroFM - Tallinn
+https://skymedia-live.bitflip.ee/RETRO?.mp3
+
+#EXTINF:-1, Radio pobedy
+http://178.46.155.73:8000/rp?.mp3
+
+#EXTINF:-1, Radio bessmertnyi polk
+https://rr-bessmertnyipolk.hostingradio.ru/bessmertnyipolk96.aacp?.mp3
+
+#EXTINF:-1, Radio Uynost
+https://icecast-vgtrk.cdnvideo.ru/unost_mp3_128kbps?.mp3
+
+#EXTINF:-1, 60s & 70s
+http://strm112.1.fm/60s_70s_mobile_mp3?.mp3
+
+#EXTINF:-1, Record Naftalin FM
+https://radiorecord.hostingradio.ru/naft96.aacp?.mp3
+
+#EXTINF:-1, Record 60`s
+https://radiorecord.hostingradio.ru/cadillac96.aacp?.mp3
+
+#EXTINF:-1, Record 70`s
+https://radiorecord.hostingradio.ru/197096.aacp?.mp3
+
+#EXTINF:-1, Record 80`s
+https://radiorecord.hostingradio.ru/198096.aacp?.mp3
+
+#EXTINF:-1, Rodnyie pesni
+https://rodpesni.amgradio.ru/rp?.mp3
+
+#EXTINF:-1, Sovetskie pesni
+https://sovetskie-pesni.ru:8005/stream?.mp3
+
+#EXTINF:-1, Radio Nostalgie
+https://icecast-bulteam.cdnvideo.ru/Nostalgie?.mp3
+
+#EXTINF:-1, Retro Club
+https://retroclub.hostingradio.ru/retroclub224.aacp?.mp3
+
+#EXTINF:-1, WFDU Retro Radio (USA)
+http://peridot.streamguys1.com:5350/iheart?.mp3
+

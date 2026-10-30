@@ -1,0 +1,154 @@
+server:
+  name: "DLNA-emu"          # имя в списке серверов на ресивере
+  host: "0.0.0.0"           # слушать на всех интерфейсах
+  port: 8200                # HTTP порт DLNA (ресивер)
+# IP утройства в LAN где запущен эмулятор
+  announce_ip: "192.168.1.1"
+# Сколько секунд при открытии списка проверять, есть ли у треков Яндекса реальный FLAC.
+# Где FLAC нет — ресиверу заявляется MP3 (нужно Yamaha и другим «строгим» ресиверам).
+  format_probe_timeout: 4
+# Сколько секунд помнить результат проверки (30 минут = 1800).
+  format_cache_sec: 1800
+
+# Веб-панель управления (браузер)
+web:
+  enabled: true
+  port: 8088                # http://IP-устройства:8088
+
+# Локальные файлы с USB (вместо minidlna) — без предварительного сканирования
+files:
+# корень(и) USB на Keenetic, обычно /tmp/mnt
+# в windows как пример - D:/music/ (косые лучше сделать как тут)
+  roots:
+    - "/tmp/mnt"
+# Папка с плейлистами .m3u / .m3u8 (строка или список). Пусто = искать .m3u по всем roots.
+# Если задана — плейлисты USB берутся только отсюда (быстрее на больших дисках).
+# Пример: "/tmp/mnt/6EE7-47CC/playlists"  или  "D:/music/playlists" в windows
+  playlists_folder: ""
+
+# Сетевые хранилища (NAS, облако, FTP-сервер) — на ресивере папка «Сетевые хранилища».
+# Аудио идёт напрямую с хранилища, на роутер ничего не копируется. Список можно править
+# и в веб-панели (Настройки → Сетевые хранилища) — применяется без перезапуска.
+# Подробности: ReadMe-NETWORK-STORAGE.md
+network_storages: []
+#  - name: "Мой NAS"            # имя папки на ресивере (уникальное)
+#    type: webdav               # webdav | ftp | ftps
+#    url: "https://nas.local:5006/music"
+#    user: "me"
+#    password: "secret"
+#    verify_ssl: false          # только для самоподписанного сертификата
+#  - name: "FTP-сервер"
+#    type: ftp
+#    host: "192.168.1.50"
+#    port: 21
+#    path: "/music"             # с какой папки начинать
+#    user: "me"
+#    password: "secret"
+#    encoding: "utf-8"          # cp1251 — если на сервере старые русские имена
+
+radio:
+# Папка с радио .m3u / .m3u8. Пусто = папка "radio" рядом с эмулятором (config.yaml).
+# Можно указать свой путь, например D:/dlna-emu/radio/ или /opt/dlna-emu/radio
+# (относительный путь считается от папки эмулятора)
+  folder: ""
+  reload_on_browse: true
+# Отдавать радио через эмулятор (роутер): он сам открывает поток станции и пересылает ресиверу.
+# true — надёжнее (https, редиректы, ICY); false — ресивер сам идёт на станцию (редирект 302).
+  proxy: true
+
+deezer:
+# arl cookie с deezer.com (Application → Cookies → arl)
+  arl: ""
+# Качество: mp3_128 | mp3_320 | flac
+  quality: "flac"
+  cache_sec: 300
+  stream_mode: auto        # chunked | buffered | auto
+  buffer_timeout: 6.0      # сек, сколько ждать полной загрузки трека (для auto/buffered)
+
+# DriveMusic (ru.drivemusic.me) — бесплатно, без авторизации
+drivemusic:
+  enabled: true
+  cache_sec: 300
+  
+# Zaycev.net (zaycev.net) — без авторизации. Новинки, топ, жанры, подборки подгружаются с сайта
+# по мере открытия папок; исполнители — через веб-поиск (вкладка «Поиск» → Zaycev.net → «+ В DLNA»)
+# и появляются на ресивере в Zaycev.net → 🔍 Мои поиски. «Текущий плейлист» возобновляемый.
+zaycev:
+  enabled: true
+  cache_sec: 300
+  tracks_per_chunk: 100   # треков (или подборок) в одной DLNA-«Странице»
+  stream_mode: auto       # chunked | buffered | auto
+  buffer_timeout: 6.0     # сек на буфер; при таймауте — chunked
+  buffer_limit_mb: 64
+
+akniga:
+  enabled: true
+  cache_sec: 600                 # кэш карточек книги (сек)
+  section_books_per_chunk: 500   # книг в одной DLNA-«Странице» раздела (200..800 разумно)
+  ffmpeg: "/opt/bin/ffmpeg"      # полный путь к ffmpeg, если он не в PATH
+  chapter_kbps: 128              # на слабом роутере можно 64
+  
+# PromoDJ (promodj.com) — без авторизации
+promodj:
+  enabled: true
+  cache_sec: 300
+  tracks_per_chunk: 500   # треков в одной DLNA-«Странице»
+  stream_mode: auto       # chunked | buffered | auto
+  buffer_timeout: 6.0     # сек на буфер; при таймауте — chunked (без зависания)
+  buffer_limit_mb: 64     # больше этого размера всегда chunked (миксы/шоу)
+
+# Яндекс.Музыка — OAuth-токен
+# Получить: https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d
+# После входа скопировать access_token из адресной строки
+yandex:
+  token: ""
+  quality: "flac"   # mp3_320 | flac
+  cache_sec: 300
+  stream_mode: auto        # chunked | buffered | auto  (auto нужен для Yamaha RX-V777 и старых ресиверов)
+  buffer_timeout: 6.0      # сек, сколько ждать полной загрузки трека (для auto/buffered)
+
+# КИОН Музыка (music.mts.ru / music.kion.ru) — OAuth-токен
+# API совместим с Яндекс.Музыкой; base: https://music.mts.ru/ya_proxy_api
+# Токен: войти в music.mts.ru / music.kion.ru, DevTools → Application → Local Storage / Network
+# или через тот же OAuth flow, что у KION в Music Assistant (см. документацию провайдера).
+# Нужна подписка КИОН для lossless/FLAC.
+kion:
+  token: ""
+  quality: "flac"   # mp3_320 | flac
+  cache_sec: 300
+  stream_mode: auto
+  buffer_timeout: 6.0
+
+# Звук (zvuk.com) — X-Auth-Token
+# Получить: войти на https://zvuk.com → открыть https://zvuk.com/api/tiny/profile → скопировать token
+# Нужна подписка для high/flac; без подписки — только mid (128)
+zvuk:
+  token: ""
+  quality: "flac"          # mid | high | flac
+  cache_sec: 300
+  stream_mode: auto        # chunked | buffered | auto
+  buffer_timeout: 6.0
+
+# Обложки (upnp:albumArtURI) для USB-файлов, Deezer, Яндекса, Звука и DriveMusic
+covers:
+  enabled: true
+  max_kb: 2048             # крупнее этого не отдаём (ресиверам тяжело)
+  cache_items: 48          # сколько обложек держать в памяти (RAM роутера!)
+  max_px: 600              # ужимать большие/PNG обложки до JPEG такого размера (нужен Pillow; 0 — не трогать)
+  dlna_profile: false      # true — добавить dlna:profileID="JPEG_TN" (нужно не всем ресиверам)
+  # Радио: при смене трека обновлять обложку на ресивере. В ICY-метаданные вписывается
+  # StreamUrl с обложкой текущего трека, а URL обложки в Browse меняется вместе с треком.
+  radio_streamurl: true
+  # Радио: при смене трека поднимать SystemUpdateID и слать UPnP-событие подписчикам
+  # (ресивер перечитывает папку и получает новый URL обложки). Если ресивер из-за этого
+  # «дёргается» (выкидывает из «Сейчас играет») — поставьте false.
+  radio_events: true
+  
+# Трассировка DLNA-трафика от ресиверов (в веб-консоль /logs).
+# Каждый запрос ресивера к нашему HTTP-серверу и каждый M-SEARCH
+# от ресивера пишутся логгером dlna_emu.trace.
+trace:
+  enabled: true    # false — не логировать входящие запросы вовсе
+  covers: false    # true  — логировать ещё и /cover/* на уровне INFO
+
+log_level: info

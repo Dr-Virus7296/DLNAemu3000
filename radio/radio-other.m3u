@@ -1,0 +1,53 @@
+#EXTM3U
+#EXTINF:-1,Jazz
+https://nashe1.hostingradio.ru/jazz-128.mp3
+#EXTINF:-1,orfey fm
+https://orfeyfm.hostingradio.ru:8034/orfeyfm96.aacp?.mp3
+#EXTINF:-1,Record Symphoniya FM
+https://radiorecord.hostingradio.ru/symph96.aacp?.mp3
+#EXTINF:-1,Ermitazh
+https://hermitage.hostingradio.ru/hermitage128.mp3
+#EXTINF:-1,Za oblakami
+http://195.88.63.114:8000/zaoblakami?.mp3
+#EXTINF:-1,Caprice piano blues
+http://79.111.14.76:8000/pianoblues?.mp3
+#EXTINF:-1,Caprice piano
+http://79.120.77.11:8000/piano?.mp3
+#EXTINF:-1,Caprice opera
+http://79.120.39.202:8000/opera?.mp3
+#EXTINF:-1,Caprice Poezia
+http://79.120.77.11:8002/poetryru?.mp3
+#EXTINF:-1,Radio Kniga
+http://bookradio.hostingradio.ru:8069/fm?.mp3
+#EXTINF:-1,Umnoe Radio
+https://umnoe.amgradio.ru/Umnoe?4876?.mp3
+#EXTINF:-1,Radio svoboda
+http://144.31.82.101:8000/svoboda?.mp3
+#EXTINF:-1,Serebryanny Dozhd
+https://silverrain.hostingradio.ru/silver128.mp3
+#EXTINF:-1,Shanson Tyumen
+http://80.91.16.166:8000/ch_72_01?.mp3
+#EXTINF:-1,Kalina krasnaya
+http://icecast-studio21.cdnvideo.ru/KalynaK_1a?.mp3
+#EXTINF:-1,Comedy Radio Tomsk
+https://listen.radio.tomsk.ru/comedy?.mp3
+#EXTINF:-1,YumorFM - classic
+https://srv01.gpmradio.ru/stream/pro/aac/64/21?.mp3
+#EXTINF:-1,YumorFM - anekdoty
+https://pub0101.101.ru/stream/trust/mp3/128/20?e2b1?.mp3
+#EXTINF:-1,SKAZKA FM
+https://skazka.amgradio.ru/Skazka?.mp3
+#EXTINF:-1,Record SKAZKI MC V
+https://radiorecord.hostingradio.ru/skazki96.aacp?.mp3
+#EXTINF:-1,Record Christmas
+https://radiorecord.hostingradio.ru/christmas96.aacp?.mp3
+#EXTINF:-1,Record Russkaya Zima
+https://radiorecord.hostingradio.ru/ruszima96.aacp?.mp3
+#EXTINF:-1,Record Vesnushka fm
+https://radiorecord.hostingradio.ru/deti96.aacp?.mp3
+#EXTINF:-1,Record Gastarbayter fm
+https://radiorecord.hostingradio.ru/gast96.aacp?.mp3
+#EXTINF:-1,Record Medlyak fm
+https://radiorecord.hostingradio.ru/mdl96.aacp?.mp3
+#EXTINF:-1,DFM/igromania
+https://dfm-pump.hostingradio.ru/igromania96.aacp?.mp3

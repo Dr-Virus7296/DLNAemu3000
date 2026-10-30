@@ -1,0 +1,65 @@
+#EXTM3U
+#EXTINF:-1,Record GOP FM
+https://radiorecord.hostingradio.ru/gop96.aacp?.mp3
+#EXTINF:-1,Record SuperDiscoteka 90
+https://radiorecord.hostingradio.ru/sd9096.aacp?.mp3
+#EXTINF:-1,DFM Diskach 90
+https://dfm-disc90.hostingradio.ru/disc9096.aacp?.mp3
+#EXTINF:-1,Dipol FM - Tyumen
+https://icecast-sibinformburo.cdnvideo.ru/dipolfm?.mp3
+#EXTINF:-1,Krasnaya Armia - Tyumen
+http://live.rzs.ru/ka.128.mp3
+#EXTINF:-1,Radio City - Tyumen
+http://online.100i6fm.ru:8000/city_mp3?.mp3
+#EXTINF:-1,AvtoRadio - Tyumen
+http://80.91.16.166:8000/ar_72_01?.mp3
+#EXTINF:-1,Russkoe radio
+https://rusradio.hostingradio.ru/rusradio96.aacp?.mp3
+#EXTINF:-1,Russkoe radio 00`s
+https://rr-00.hostingradio.ru/rr0096.aacp?.mp3
+#EXTINF:-1,HIT FM - Tyumen
+http://80.91.16.166:8000/ht_72_01?.mp3
+#EXTINF:-1,HIT FM - UA Kyiv
+http://144.31.82.101:8000/HitFM_HD?.mp3
+#EXTINF:-1,Novoe radio
+http://icecast-newradio.cdnvideo.ru/newradio3?.mp3
+#EXTINF:-1,Vladivostok FM
+http://vladfm.ru:8000/vfm?.mp3
+#EXTINF:-1,NRJ Pyatigorsk
+http://str.simpex.ru:8076/nrj?.mp3
+#EXTINF:-1,Radio Sibir
+http://stream.radiosibir.ru:8090/HQ?.mp3
+#EXTINF:-1,intervolna
+http://online.intervolna.ru:8001/radio128?.mp3
+#EXTINF:-1,Like FM - Vladimir
+https://icecast-trc33.cdnvideo.ru/stream?.mp3
+#EXTINF:-1,capital fm
+https://icecast-vgtrk.cdnvideo.ru/capitalfmmp3?.mp3
+#EXTINF:-1,THT Music
+http://tntradio.hostingradio.ru:8027/tntradio128.mp3
+#EXTINF:-1,Europa Plus
+https://ep128.hostingradio.ru:8030/ep128?.mp3
+#EXTINF:-1,Love radio
+http://microit.n340.com:9000/VgMv0WV17ZVx1uuo_12_love_128_reg_44?.mp3
+#EXTINF:-1,Radio 7
+http://europaplus.hostingradio.ru:8014/radiosept320.mp3
+#EXTINF:-1,Radio Vanya
+http://icecast-radiovanya.cdnvideo.ru/radiovanya?.mp3
+#EXTINF:-1,Militseyskaya volna - Tula
+http://87.244.47.90:8000/MV?.mp3
+#EXTINF:-1,Radio rodnih dorog
+https://stream1.radiord.ru:8000/live128.aac?.mp3
+#EXTINF:-1,Doroznoe Radio - EKB
+http://emgregion.hostingradio.ru:8064/ekb.dorognoe.mp3
+#EXTINF:-1,Radio dacha - Tyumen
+http://live.radio7.su:9000/Dacha_256?.mp3
+#EXTINF:-1,Monte-Carlo - EKB
+http://online-1.gkvr.ru:8000/mc_eka_64.aac?.mp3
+#EXTINF:-1,DFM pop gold 1990`s
+https://dfm-popgold90.hostingradio.ru/popgold9096.aacp?.mp3
+#EXTINF:-1,DFM pop gold 2000`s
+https://dfm-popgold00.hostingradio.ru/popgold0096.aacp?.mp3
+#EXTINF:-1,DFM pop gold 2010`s
+https://dfm-popgold10.hostingradio.ru/popgold1096.aacp?.mp3
+#EXTINF:-1,DFM pop gold 2020`s
+https://dfm-popgold20.hostingradio.ru/popgold2096.aacp?.mp3
