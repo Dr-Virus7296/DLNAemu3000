@@ -155,6 +155,11 @@ class ContentTree:
         else:
             self._current_dir = "."
         self._current_legacy_path = os.path.join(self._current_dir, "current_playlists.json")
+        # Настройки (веб-панель → «Текущие плейлисты»), применяются через configure_current()
+        self.current_max_folders: int = self.CURRENT_FOLDERS_LIMIT   # сколько папок помнить
+        self.current_skip_artist_repeats: int = 6       # >= N треков одного исполнителя → не сохранять (0 = выкл.)
+        self.current_skip_same_album: bool = True       # у всех треков один ALBUM → не сохранять
+        self._skip_logged: set = set()
         self._check_current_dir_writable()
         try:
             self._load_current_playlists()
@@ -162,8 +167,6 @@ class ContentTree:
             log.warning("load current_playlists failed: %s", e)
 
     CURRENT_FOLDERS_LIMIT = 100
-    FROZEN_MAX_AGE = 12 * 3600   # сек: старше — снимок «Текущего плейлиста» пересобираем
-    FROZEN_IDLE = 30 * 60        # сек без play: папка считается «не играющей» — можно подрезать
 
     _FALLBACK_TITLE_RE = re.compile(r"^Плейлист(?:\s+\d+)?$")
     SAME_PLAYLIST_JACCARD = 0.8   # доля общих треков, при которой это один плейлист
@@ -364,7 +367,15 @@ class ContentTree:
         # 2) читать current_*.json
         try:
             if os.path.isdir(self._current_dir):
-                for name in os.listdir(self._current_dir):
+                def _mtime(n: str) -> float:
+                    try:
+                        return os.path.getmtime(os.path.join(self._current_dir, n))
+                    except OSError:
+                        return 0.0
+                # Если на один ключ есть два файла (current_yandex_192_168_1_64.json и
+                # current_yandex@192.168.1.64.json) — читаем от старого к новому, чтобы
+                # побеждал тот, что записан позже, а не «кто случайно последний в listdir».
+                for name in sorted(os.listdir(self._current_dir), key=_mtime):
                     if not (name.startswith("current_") and name.endswith(".json")):
                         continue
                     if name == "current_playlists.json":
@@ -418,11 +429,25 @@ class ContentTree:
             for svc, folders in items.items():
                 path = self._current_file(svc)
                 self._write_json_file(path, folders)
+                self._remove_legacy_file(svc)
         except Exception as e:
             log.warning(
                 "save current playlists: %s — «Текущий плейлист» не сохранится после "
                 "перезапуска (проверьте права на папку %s)", e, self._current_dir,
             )
+
+    def _remove_legacy_file(self, key: str) -> None:
+        """Удалить устаревший файл current_<svc>_<a>_<b>_<c>_<d>.json того же ключа."""
+        m = re.match(r"^([a-z0-9]+)@(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$", key or "")
+        if not m:
+            return
+        old = os.path.join(self._current_dir, "current_" + "_".join(m.groups()) + ".json")
+        if old != self._current_file(key) and os.path.exists(old):
+            try:
+                os.remove(old)
+                log.info("current: удалён устаревший файл %s", os.path.basename(old))
+            except OSError as e:
+                log.warning("remove legacy %s: %s", old, e)
 
     @staticmethod
     def _write_json_file(path: str, data) -> None:
@@ -532,8 +557,183 @@ class ContentTree:
         except Exception as e:
             log.debug("set_current_playlist (browse cache): %s", e)
 
-    def _promote_browsed(self, service: str, track_oid: str, client_ip: str = "") -> None:
-        """При play: если трек из последнего browse — сохранить подборку в историю."""
+    # ---------- настройки «Текущего плейлиста» ----------
+
+    def configure_current(
+        self,
+        max_folders: Optional[int] = None,
+        skip_artist_repeats: Optional[int] = None,
+        skip_same_album: Optional[bool] = None,
+    ) -> int:
+        """Применить настройки. Возвращает, сколько папок убрано из-за нового лимита."""
+        if max_folders is not None:
+            try:
+                self.current_max_folders = max(1, min(int(max_folders), 1000))
+            except (TypeError, ValueError):
+                pass
+        if skip_artist_repeats is not None:
+            try:
+                self.current_skip_artist_repeats = max(0, min(int(skip_artist_repeats), 1000))
+            except (TypeError, ValueError):
+                pass
+        if skip_same_album is not None:
+            self.current_skip_same_album = bool(skip_same_album)
+        return self._enforce_current_limit()
+
+    def _forget_folder_state(self, key: str, fid: str) -> None:
+        """Забыть всё RAM-состояние папки (снимок, «играет», активная). Под _current_lock."""
+        for fk in [k for k in self._frozen_current if k == f"{key}:{fid}"]:
+            self._frozen_current.pop(fk, None)
+            self._frozen_current_ts.pop(fk, None)
+        self._last_play.pop(f"{key}:{fid}", None)
+        if self._playing_fid.get(key) == fid:
+            self._playing_fid.pop(key, None)
+        if self._active_fid.get(key) == fid:
+            self._active_fid.pop(key, None)
+
+    def _enforce_current_limit(self) -> int:
+        """Оставить в каждой истории не больше current_max_folders самых свежих папок."""
+        limit = int(self.current_max_folders)
+        removed = 0
+        touched: List[str] = []
+        with self._current_lock:
+            for key, folders in list(self._current.items()):
+                if len(folders) > limit:
+                    for f in folders[limit:]:
+                        self._forget_folder_state(key, f.get("id") or "")
+                    removed += len(folders) - limit
+                    self._current[key] = folders[:limit]
+                    touched.append(key)
+        for key in touched:
+            self._save_current_playlists(key)
+        if removed:
+            self.bump_update_id()
+            log.info("current: лимит %d папок — удалено старых: %d", limit, removed)
+        return removed
+
+    def _current_skip_reason(self, tracks: List[dict]) -> str:
+        """Причина, по которой список НЕ надо запоминать в «Текущем плейлисте» ('' — запоминать).
+
+        1) один исполнитель встречается >= current_skip_artist_repeats раз (страница артиста,
+           «лучшее у исполнителя» и т.п.);
+        2) у всех треков одинаковый ALBUM (это альбом целиком). Если альбома в тегах нет
+           (хотя бы у одного трека) — список сохраняется.
+        """
+        if not tracks:
+            return ""
+        n = int(self.current_skip_artist_repeats or 0)
+        if n > 0:
+            counts: Dict[str, int] = {}
+            shown: Dict[str, str] = {}
+            for t in tracks:
+                a = (t.get("artist") or "").strip()
+                if a:
+                    k = a.casefold()
+                    counts[k] = counts.get(k, 0) + 1
+                    shown.setdefault(k, a)
+            if counts:
+                k, c = max(counts.items(), key=lambda kv: kv[1])
+                if c >= n:
+                    return f"исполнитель «{shown[k]}» встречается {c} раз (порог {n})"
+        if self.current_skip_same_album and len(tracks) >= 2:
+            albums = [(t.get("album") or "").strip().casefold() for t in tracks]
+            if all(albums) and len(set(albums)) == 1:
+                return f"у всех треков один альбом «{(tracks[0].get('album') or '').strip()}»"
+        return ""
+
+    # ---------- управление из веб-панели ----------
+
+    def current_overview(self) -> List[dict]:
+        """Все сохранённые «Текущие плейлисты» (все площадки и ресиверы) для веб-панели."""
+        rows: List[dict] = []
+        with self._current_lock:
+            for key, folders in self._current.items():
+                svc, _, ip = key.partition("@")
+                for f in folders:
+                    rows.append({
+                        "key": key, "service": svc, "ip": ip,
+                        "id": f.get("id") or "", "title": f.get("title") or "Плейлист",
+                        "tracks": len(f.get("tracks") or []),
+                        "start": int(f.get("start_index") or 0),
+                        "updated": float(f.get("updated") or 0),
+                    })
+        return rows
+
+    def delete_current_folders(self, items: List[Tuple[str, str]]) -> int:
+        """Удалить выбранные папки: items = [(key, folder_id), ...]. Возвращает число удалённых."""
+        removed = 0
+        touched: List[str] = []
+        trash: List[Tuple[str, dict, int]] = []
+        with self._current_lock:
+            for key, fid in items:
+                folders = self._current.get(key)
+                if not folders:
+                    continue
+                kept = [f for f in folders if f.get("id") != fid]
+                if len(kept) == len(folders):
+                    continue
+                for pos, f in enumerate(folders):
+                    if f.get("id") == fid:
+                        trash.append((key, f, pos))
+                removed += len(folders) - len(kept)
+                self._forget_folder_state(key, fid)
+                if kept:
+                    self._current[key] = kept
+                else:
+                    self._current.pop(key, None)
+                if key not in touched:
+                    touched.append(key)
+        for key in touched:
+            self._save_current_playlists(key)
+            with self._current_lock:
+                still = key in self._current
+            if not still:
+                for path in (self._current_file(key),):
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+                self._remove_legacy_file(key)
+        if removed:
+            self._last_deleted = trash
+            self.bump_update_id()
+            log.info("current: удалено вручную папок: %d", removed)
+        return removed
+
+    def deleted_backup_count(self) -> int:
+        """Сколько папок можно вернуть после последнего ручного удаления."""
+        return len(getattr(self, "_last_deleted", None) or [])
+
+    def restore_last_deleted(self) -> int:
+        """Вернуть папки, удалённые последним ручным удалением (одноуровневая «корзина»)."""
+        trash = list(getattr(self, "_last_deleted", None) or [])
+        if not trash:
+            return 0
+        restored = 0
+        touched: List[str] = []
+        with self._current_lock:
+            for key, folder, pos in sorted(trash, key=lambda x: x[2]):
+                folders = list(self._current.get(key) or [])
+                if any(f.get("id") == folder.get("id") for f in folders):
+                    continue
+                folders.insert(min(pos, len(folders)), folder)
+                self._current[key] = folders
+                restored += 1
+                if key not in touched:
+                    touched.append(key)
+            self._last_deleted = []
+        for key in touched:
+            self._save_current_playlists(key)
+        if restored:
+            self.bump_update_id()
+            log.info("current: возвращено папок: %d", restored)
+        return restored
+
+    def _promote_browsed(self, service: str, track_oid: str, client_ip: str = "") -> Optional[str]:
+        """При play: если трек из последнего browse — сохранить подборку в историю.
+
+        Возвращает "skip", если играют из списка, который по правилам не запоминаем.
+        """
         service = self._svc_key(service)
         key = self._current_key(service, client_ip or None)
         with self._current_lock:
@@ -561,6 +761,16 @@ class ContentTree:
                     f.get("title"), [t.get("oid") for t in (f.get("tracks") or [])],
                     title, new_oids)
             ]
+            if not matches:
+                reason = self._current_skip_reason(tracks)
+                if reason:
+                    mark = (key, fid)
+                    if mark not in self._skip_logged:
+                        self._skip_logged.add(mark)
+                        if len(self._skip_logged) > 500:
+                            self._skip_logged.clear()
+                        log.info("current: «%s» не сохраняю — %s", title, reason)
+                    return "skip"
             if len(matches) == 1:
                 ex = matches[0]
                 if ([t.get("oid") for t in (ex.get("tracks") or [])] == new_oids
@@ -589,12 +799,97 @@ class ContentTree:
                 "updated": time.time(),
                 "client_ip": (client_ip or self._request_client_ip() or ""),
             }
+            # метку «с какого трека заморожен список» переносим в новую запись
+            for m in matches:
+                if m.get("snap_start") is not None:
+                    entry["snap_start"] = m["snap_start"]
+                    break
             folders = [entry] + [f for f in folders if not any(f is m for m in matches)]
-            folders = folders[: self.CURRENT_FOLDERS_LIMIT]
+            for dropped in folders[self.current_max_folders:]:
+                self._forget_folder_state(key, dropped.get("id") or "")
+            folders = folders[: self.current_max_folders]
             self._current[key] = folders
             self._active_fid[key] = keep_id
         self._save_current_playlists(key)
+        return None
         # не bump'аем UpdateID на каждый трек — иначе ресивер дёргается
+
+    # Список «Текущего плейлиста» НЕ подрезается по времени и сам по себе. Играющая папка
+    # держит замороженный снимок (с трека, с которого начали слушать), а его начало
+    # запоминается на диске в folder["snap_start"] — поэтому и после выключения ресивера,
+    # и после перезапуска эмулятора список остаётся прежним. Подрезается он только когда
+    # у этого ресивера заиграло что-то другое (другой плейлист, другая площадка, радио,
+    # файлы) — см. _release_key().
+
+    def _release_key(self, key: str, except_fid: str = "") -> bool:
+        """Снять «заморозку» со всех папок истории key, кроме except_fid.
+
+        Вызывать под _current_lock (он реентерабельный). Возвращает True, если на диске
+        надо обновить метку snap_start."""
+        changed = False
+        for f in (self._current.get(key) or []):
+            fid = f.get("id") or ""
+            if fid == except_fid:
+                continue
+            if f.get("snap_start") is not None:
+                f.pop("snap_start", None)
+                changed = True
+            self._frozen_current.pop(f"{key}:{fid}", None)
+            self._frozen_current_ts.pop(f"{key}:{fid}", None)
+            self._last_play.pop(f"{key}:{fid}", None)
+        pf = self._playing_fid.get(key)
+        if pf and pf != except_fid:
+            self._playing_fid.pop(key, None)
+        return changed
+
+    def _release_playing_if_foreign(self, service: str, key: str, track_oid: str,
+                                    client_ip: str = "") -> None:
+        """Играет трек, которого нет в играющей папке (другой список, не попавший в
+        «Текущий плейлист»: альбом целиком, страница артиста, поиск, избранное…).
+        Значит, прежняя папка больше не играет — её список при возврате подрежется."""
+        changed = False
+        with self._current_lock:
+            folders = self._current.get(key) or self._current.get(service) or []
+            for f in folders:
+                if f.get("snap_start") is None and self._playing_fid.get(key) != f.get("id"):
+                    continue
+                if any(t.get("oid") == track_oid for t in (f.get("tracks") or [])):
+                    return      # это трек из играющей папки — она продолжает играть
+            changed = self._release_key(key)
+        if changed:
+            self._save_current_playlists(key)
+
+    def release_playing(self, client_ip: str = "", except_service: str = "") -> int:
+        """Ресивер client_ip начал играть что-то НЕ из «Текущего плейлиста» этой площадки
+        (радио, файлы, другая площадка…): играющие папки этого ресивера перестают быть
+        замороженными, при возврате в них список покажется подрезанным.
+
+        except_service — площадка, чей трек стартовал сейчас (её папки обрабатывает
+        advance_current по принадлежности трека к папке). Возвращает число сброшенных."""
+        ip = (client_ip or self._request_client_ip() or "").strip()
+        if not ip:
+            return 0
+        skip_svc = self._svc_key(except_service) if except_service else ""
+        n = 0
+        touched: List[str] = []
+        with self._current_lock:
+            keys = set(self._current.keys()) | set(self._playing_fid.keys())
+            for key in keys:
+                svc, _, kip = key.partition("@")
+                if kip != ip or (skip_svc and svc == skip_svc):
+                    continue
+                active = bool(self._playing_fid.get(key)) or any(
+                    f.get("snap_start") is not None for f in (self._current.get(key) or []))
+                if not active:
+                    continue
+                if self._release_key(key):
+                    touched.append(key)
+                n += 1
+        for key in touched:
+            self._save_current_playlists(key)
+        if n:
+            log.debug("current: %s играет вне «Текущего плейлиста» — сброшено: %d", ip, n)
+        return n
 
     def advance_current(self, service: str, track_oid: str, client_ip: str = "") -> None:
         """При воспроизведении — сохранить/обновить подборку и позицию.
@@ -607,9 +902,15 @@ class ContentTree:
         try:
             if client_ip:
                 self.set_request_client(client_ip)
+            # заиграла другая площадка → играющие папки остальных площадок больше не играют
+            self.release_playing(client_ip, except_service=service)
             service = self._svc_key(service)
             key = self._current_key(service, client_ip or None)
-            self._promote_browsed(service, track_oid, client_ip=client_ip)
+            if self._promote_browsed(service, track_oid, client_ip=client_ip) == "skip":
+                # список не из «запоминаемых» (правила в веб-панели) — но играет уже ОН,
+                # а не прежняя папка: сбрасываем её снимок, чтобы при возврате она подрезалась
+                self._release_playing_if_foreign(service, key, track_oid, client_ip)
+                return
             need_save = False
             with self._current_lock:
                 folders = self._current.get(key) or self._current.get(service) or []
@@ -632,20 +933,33 @@ class ContentTree:
                             break
                     new_fid = folder.get("id") or ""
                     prev_fid = self._playing_fid.get(key)
-                    if prev_fid and prev_fid != new_fid:
-                        # включили другой плейлист — снимок прежнего больше не держим:
-                        # при следующем входе он покажется уже подрезанным
-                        ek = self._svc_key(service)
-                        ip = client_ip or self._request_client_ip()
-                        fk = f"{ek}@{ip}:{prev_fid}" if ip else f"{ek}:{prev_fid}"
-                        self._frozen_current.pop(fk, None)
-                        self._frozen_current_ts.pop(fk, None)
-                        self._last_play.pop(f"{key}:{prev_fid}", None)
+                    # включили другой плейлист — прежние папки больше не держим замороженными
+                    # (в т.ч. после перезапуска, когда _playing_fid пуст): список подрежется
+                    if self._release_key(key, except_fid=new_fid):
+                        need_save = True
+                    # Плейлист начал играть: фиксируем снимок для ресивера СЕЙЧАС (с этого
+                    # трека). Дальше эмулятор двигает позицию у себя, а ресиверу отдаёт этот
+                    # снимок, пока не включат другой плейлист (по времени он не сбрасывается).
+                    ek2 = self._svc_key(service)
+                    ip2 = client_ip or self._request_client_ip()
+                    fk_new = f"{ek2}@{ip2}:{new_fid}" if ip2 else f"{ek2}:{new_fid}"
+                    if fk_new not in self._frozen_current:
+                        snap = folder.get("snap_start")
+                        cur_i = int(snap) if snap is not None else int(folder.get("start_index") or 0)
+                        all_tr = list(folder.get("tracks") or [])
+                        self._frozen_current[fk_new] = all_tr[cur_i:] if cur_i > 0 else all_tr
+                        self._frozen_current_ts[fk_new] = time.time()
+                        if snap is None:
+                            folder["snap_start"] = cur_i      # на диск: переживёт перезапуск
+                            need_save = True
                     self._playing_fid[key] = new_fid
                     self._last_play[f"{key}:{new_fid}"] = time.time()
                     self._active_fid[key] = new_fid
                     folders = [folder] + [f for f in folders if f is not folder]
                     self._current[key] = folders
+                else:
+                    # трека нет ни в одной папке (поиск, избранное, чужой список)
+                    self._release_playing_if_foreign(service, key, track_oid, client_ip)
             if need_save:
                 self._save_current_playlists(key)
         except Exception as e:
@@ -755,6 +1069,65 @@ class ContentTree:
                 folders = self._current.get(service)
             return list(folders or [])
 
+    def resolve_track_page_url(self, service: str, track_oid: str) -> str:
+        """Страница трека (page_url) из сохранённых «Текущих плейлистов» (все IP)."""
+        if not track_oid:
+            return ""
+        service = self._svc_key(service)
+        with self._current_lock:
+            for key, folders in self._current.items():
+                if key != service and not key.startswith(service + "@"):
+                    continue
+                for folder in folders or []:
+                    for t in folder.get("tracks") or []:
+                        if t.get("oid") == track_oid and t.get("page_url"):
+                            return t["page_url"]
+            for key, br in self._last_browsed.items():
+                if key == service or key.startswith(service + "@"):
+                    for t in (br.get("tracks") or []):
+                        if t.get("oid") == track_oid and t.get("page_url"):
+                            return t["page_url"]
+        return ""
+
+    DM_WARM_COUNT = 8        # сколько треков drivemusic перепарсить при входе в папку
+
+    def _dm_refresh_current_links(self, folder: dict) -> None:
+        """Вход в «Текущий плейлист» drivemusic: заново распарсить ссылки на треки, начиная
+        с того, на котором закончили слушать. Фоновый поток — Browse не ждёт сайт."""
+        dm = getattr(self, "drivemusic", None)
+        if dm is None or not hasattr(dm, "refresh_links"):
+            return
+        fid = folder.get("id") or ""
+        running = getattr(self, "_dm_refresh_running", None)
+        if running is None:
+            running = self._dm_refresh_running = set()
+        if fid in running:
+            return
+        tracks = list(folder.get("tracks") or [])
+        start = int(folder.get("start_index") or 0)
+        items = []
+        for t in tracks[start:]:
+            oid = t.get("oid") or ""
+            tid = oid.rsplit(":", 1)[-1]
+            if not tid:
+                continue
+            items.append((tid, t.get("page_url") or "", t.get("title") or ""))
+        if not items:
+            return
+        running.add(fid)
+
+        def work():
+            try:
+                n = dm.refresh_links(items, count=self.DM_WARM_COUNT)
+                log.info("drivemusic: ссылки перепарсены с позиции %d: %d/%d",
+                         start + 1, n, min(len(items), self.DM_WARM_COUNT))
+            except Exception as e:
+                log.warning("drivemusic refresh links: %s", e)
+            finally:
+                running.discard(fid)
+
+        threading.Thread(target=work, name="dm-refresh", daemon=True).start()
+
     def resolve_track_title(self, service: str, track_oid: str) -> str:
         """Найти artist — title по oid среди текущих подборок (все IP)."""
         if not track_oid:
@@ -809,21 +1182,7 @@ class ContentTree:
         prefix = f"{service}:current"
         ek = self._svc_key(service)   # ключ хранения (с учётом аккаунта)
         if object_id == prefix:
-            # Сброс кэша только при входе в список папок (= выбор другого плейлиста).
-            ip = self._request_client_ip()
-            ip_prefix = f"{ek}@{ip}:" if ip else f"{ek}:"
-            now = time.time()
-            ckey = self._current_key(service)
-            with self._current_lock:
-                for k in [k for k in self._frozen_current if k.startswith(ip_prefix) or (not ip and k.startswith(f"{ek}:"))]:
-                    if ip and not k.startswith(ip_prefix):
-                        continue
-                    fid_k = k[len(ip_prefix):] if ip and k.startswith(ip_prefix) else k.split(":", 1)[-1]
-                    # Играющая папка остаётся как есть: ресивер ведёт очередь по её индексам
-                    if now - self._last_play.get(f"{ckey}:{fid_k}", 0.0) < self.FROZEN_IDLE:
-                        continue
-                    del self._frozen_current[k]
-                    self._frozen_current_ts.pop(k, None)
+            # Список папок: снимки играющих папок не трогаем (никакой подрезки по времени).
             out = []
             for f in self.list_current_folders(service):
                 fid = f.get("id") or "x"
@@ -848,24 +1207,29 @@ class ContentTree:
             # автопереход на следующий трек не происходит.
             # Поэтому позицию мы у себя двигаем (advance_current), а ресиверу отдаём
             # прежний снимок, пока папка играет. Подрезанный список он увидит, когда
-            # включат другой плейлист или в папке не играли FROZEN_IDLE секунд.
-            st = getattr(self._request_tls, "start_index", None)
-            rc = getattr(self._request_tls, "req_count", None)
-            entering = st is not None and int(st or 0) == 0 and int(rc or 0) != 1
-            now = time.time()
+            # включат другой плейлист или другую площадку (радио, файлы и т.д.).
             with self._current_lock:
                 ckey = self._current_key(service)
                 self._active_fid[ckey] = fid
                 self._last_browsed.pop(ckey, None)
                 tracks = self._frozen_current.get(freeze_key)
-                playing = now - self._last_play.get(f"{ckey}:{fid}", 0.0) < self.FROZEN_IDLE
-                stale = now - self._frozen_current_ts.get(freeze_key, now) > self.FROZEN_MAX_AGE
-                if tracks is None or stale or (entering and not playing):
+                if tracks is None:
+                    # снимка нет (папка не играет или эмулятор перезапущен): берём с метки
+                    # snap_start (если папка играла) или с текущей позиции
                     all_tracks = list(folder.get("tracks") or [])
-                    start = int(folder.get("start_index") or 0)
+                    snap = folder.get("snap_start")
+                    start = int(snap) if snap is not None else int(folder.get("start_index") or 0)
                     tracks = all_tracks[start:] if start > 0 else all_tracks
                     self._frozen_current[freeze_key] = tracks
-                    self._frozen_current_ts[freeze_key] = now
+                    self._frozen_current_ts[freeze_key] = time.time()
+            if service == "drivemusic":
+                st_ = getattr(self._request_tls, "start_index", None)
+                rc_ = getattr(self._request_tls, "req_count", None)
+                if st_ is not None and int(st_ or 0) == 0 and int(rc_ or 0) != 1:
+                    try:
+                        self._dm_refresh_current_links(folder)
+                    except Exception as e:
+                        log.debug("dm refresh hook: %s", e)
             out = []
             for t in tracks:
                 out.append(self._item(

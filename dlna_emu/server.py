@@ -301,6 +301,18 @@ class DLNAHandler(BaseHTTPRequestHandler):
             self._serve_cover(m.group(1), ident)
             return
 
+        # Радио, файлы, flow/wave — не папки «Текущего плейлиста»: если ресивер начал
+        # играть их, прежняя играющая папка больше не играет (список при возврате подрежется).
+        # HEAD/пробы не считаем — только реальный GET.
+        if not head_only and re.match(
+                r"^/stream/(?:radio|deezer_flow|yandex-wave|net|file|local)/", path):
+            try:
+                tree = getattr(self.server, "tree", None)
+                if tree and hasattr(tree, "release_playing"):
+                    tree.release_playing(self.client_address[0] if self.client_address else "")
+            except Exception:
+                pass
+
         m = re.match(r"^/stream/radio/([^/]+)/(\d+)$", path)
         if m:
             self._stream_radio(unquote(m.group(1)), int(m.group(2)))
@@ -530,6 +542,9 @@ class DLNAHandler(BaseHTTPRequestHandler):
             log.info("radio proxy: %s недоступна для проксирования → редирект", st.name)
             return False
         it, ctype, close = res
+        radio_lib = self.server.radio  # type: ignore
+        popular = radio_lib.popular if getattr(radio_lib, "popular_active", lambda: False)() else None
+        session = popular.begin(st.url, st.name) if popular is not None else None
         try:
             self.send_response(200)
             self.send_header("Content-Type", ctype)
@@ -548,11 +563,15 @@ class DLNAHandler(BaseHTTPRequestHandler):
                     self.wfile.flush()
                 except self._CONN_ERRORS:
                     break
+                if session is not None:
+                    session.tick()      # «слушаете подряд N минут» → станция в популярном
         except self._CONN_ERRORS:
             log.debug("radio proxy: client aborted %s", st.name)
         except Exception as e:   # обрыв источника/таймаут чтения
             log.info("radio proxy %s: %s", st.name, e)
         finally:
+            if session is not None:
+                session.end()
             try:
                 close()
             except Exception:
@@ -662,7 +681,19 @@ class DLNAHandler(BaseHTTPRequestHandler):
 
     def _stream_drivemusic(self, track_id: str):
         dm: DriveMusicClient = self.server.drivemusic  # type: ignore
-        result = dm.open_stream(track_id)
+        # Страница трека берётся из сохранённого «Текущего плейлиста» (переживает перезапуск);
+        # если её нет — клиент найдёт трек поиском по названию.
+        page_url, title_hint = "", ""
+        try:
+            _tree = getattr(self.server, "tree", None)
+            _oid = f"drivemusic:tr:{track_id}"
+            if _tree and hasattr(_tree, "resolve_track_page_url"):
+                page_url = _tree.resolve_track_page_url("drivemusic", _oid) or ""
+            if _tree and hasattr(_tree, "resolve_track_title"):
+                title_hint = _tree.resolve_track_title("drivemusic", _oid) or ""
+        except Exception:
+            pass
+        result = dm.open_stream(track_id, page_url, title_hint=title_hint)
         if not result or result[0] is None:
             self._send(503, b"stream unavailable", "text/plain")
             return
@@ -2178,6 +2209,21 @@ def run_server(cfg: dict, config_path: str = "config.yaml") -> None:
         auto_mp3_suffix=bool(radio_cfg.get("auto_mp3_suffix", True)),
         proxy=bool(radio_cfg.get("proxy", True)),
     )
+    # «Ваше популярное радио»: статистика прослушивания лежит рядом с config.yaml
+    try:
+        from .radio_popular import RadioPopular
+        radio.popular = RadioPopular(
+            os.path.join(os.path.dirname(os.path.abspath(config_path)) or ".", "radio_popular.json"),
+            min_minutes=radio_cfg.get("popular_min_minutes", 15),
+            keep_days=radio_cfg.get("popular_keep_days", 30),
+        )
+        _pe = radio_cfg.get("popular_enabled")
+        if isinstance(_pe, str):
+            _pe = _pe.lower() in ("1", "true", "yes", "on")
+        # галка из config.yaml; фактически работает только вместе с проксированием радио
+        radio.popular_enabled = True if _pe is None else bool(_pe)
+    except Exception as e:
+        log.warning("radio popular: %s", e)
     from .accounts import AccountPool
     deezer = AccountPool("deezer", lambda tok: DeezerClient(
         arl=tok,
@@ -2317,6 +2363,20 @@ def run_server(cfg: dict, config_path: str = "config.yaml") -> None:
         covers_dlna_profile=bool(covers_profile),
         favorites_path=fav_path,
     )
+    # Настройки «Текущего плейлиста» (веб-панель → «Текущие плейлисты»)
+    try:
+        _cp = cfg.get("current_playlists") or {}
+        def _cp_bool(v, d):
+            if v is None:
+                return d
+            return v.lower() in ("1", "true", "yes", "on") if isinstance(v, str) else bool(v)
+        tree.configure_current(
+            max_folders=_cp.get("max_folders", 100),
+            skip_artist_repeats=_cp.get("skip_artist_repeats", 6),
+            skip_same_album=_cp_bool(_cp.get("skip_same_album"), True),
+        )
+    except Exception as e:
+        log.warning("current_playlists settings: %s", e)
     # Автоочистка «Текущий плейлист» по сроку из config.yaml
     try:
         _cp = cfg.get("current_playlists") or {}

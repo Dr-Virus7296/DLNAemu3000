@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -235,6 +236,7 @@ def _page(title: str, body: str, flash: str = "", active: str = "") -> bytes:
     <a href="/radio"{cls("radio")}>Радио</a>
     <a href="/search"{cls("search")}>🔍 Поиск</a>
     <a href="/favorites"{cls("favorites")}>⭐ Избранное</a>
+    <a href="/current"{cls("current")}>🕘 Текущие плейлисты</a>
   </nav>
   <a href="/logs" class="console-btn">⌨ Консоль</a>
 </header>
@@ -600,13 +602,6 @@ def _settings_body(flash: str = "") -> str:
     web = cfg.get("web") or {}
     files = cfg.get("files") or {}
     covers = cfg.get("covers") or {}
-    cur_pl = cfg.get("current_playlists") or {}
-    try:
-        cur_idle_days = int(cur_pl.get("max_idle_days") or 0)
-    except (TypeError, ValueError):
-        cur_idle_days = 0
-    if cur_idle_days < 0:
-        cur_idle_days = 0
     trace = cfg.get("trace") or {}
 
     roots = files.get("roots") or []
@@ -675,20 +670,6 @@ def _settings_body(flash: str = "") -> str:
 
     _tree = _STATE.get("tree")
 
-    def _clr(svc):
-        n = 0
-        try:
-            if _tree is not None:
-                n = _tree.current_playlist_count(svc)
-        except Exception:
-            n = 0
-        return (
-            '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #243044">'
-            f'<button type="submit" class="ghost" formaction="/current/clear?svc={svc}" '
-            'formnovalidate onclick="return confirm(\'Очистить текущий плейлист этой площадки?\')">'
-            f'🗑 Очистить текущий плейлист{f" ({n})" if n else ""}</button></div>'
-        )
-
     return f"""
 <form method="POST" action="/settings">
 
@@ -748,7 +729,6 @@ def _settings_body(flash: str = "") -> str:
   <label>Кэш метаданных, сек</label>
   <input name="deezer_cache_sec" type="number" min="30" max="86400"
          value="{html.escape(str(deezer.get("cache_sec") or 300))}">
-  {_clr("deezer")}
 </div>
 
 <div class="card">
@@ -761,7 +741,6 @@ def _settings_body(flash: str = "") -> str:
   <label>Базовый URL (зеркало; пусто = авто-выбор)</label>
   <input name="dm_base_url"
          value="{html.escape(str(dm.get("base_url") or "https://ru.drivemusic.me"))}">
-  {_clr("drivemusic")}
 </div>
 
 <div class="card">
@@ -780,7 +759,6 @@ def _settings_body(flash: str = "") -> str:
   <label>Кэш, сек</label>
   <input name="ak_cache_sec" type="number" min="30" max="86400"
          value="{html.escape(str(ak.get("cache_sec") or 600))}">
-  {_clr("akniga")}
 </div>
 
 <div class="card">
@@ -820,7 +798,6 @@ def _settings_body(flash: str = "") -> str:
   <label>Кэш, сек</label>
   <input name="ya_cache_sec" type="number" min="30" max="86400"
          value="{html.escape(str(ya.get("cache_sec") or 300))}">
-  {_clr("yandex")}
 </div>
 
 <div class="card">
@@ -852,7 +829,6 @@ def _settings_body(flash: str = "") -> str:
   <label>Кэш, сек</label>
   <input name="zv_cache_sec" type="number" min="30" max="86400"
          value="{html.escape(str(zv.get("cache_sec") or 300))}">
-  {_clr("zvuk")}
 </div>
 
 <div class="card">
@@ -871,7 +847,6 @@ def _settings_body(flash: str = "") -> str:
       ("flac", "flac (lossless)"),
       ("mp3_320", "mp3_320"),
   ])}
-  {_clr("kion")}
 </div>
 
 <div class="card">
@@ -899,7 +874,6 @@ def _settings_body(flash: str = "") -> str:
   <p class="muted" style="margin-top:4px;font-size:12px">
     Миксы длиннее лимита идут chunked (без перемотки). Таймаут не даёт ресиверу «зависнуть» на старте.
   </p>
-  {_clr("promodj")}
 </div>
 
 <div class="card">
@@ -928,7 +902,6 @@ def _settings_body(flash: str = "") -> str:
     Без авторизации. Каталоги (жанры, подборки, топ, новинки) подгружаются с сайта по мере
     открытия папок. Исполнители ищутся здесь: вкладка «Поиск» → Zaycev.net → «+ В DLNA».
   </p>
-  {_clr("zaycev")}
 </div>
 
 <div class="card">
@@ -968,29 +941,6 @@ def _settings_body(flash: str = "") -> str:
     <code>enabled: false</code>. Аудио идёт напрямую с хранилища. Применяется сразу, без перезапуска.
   </p>
   <div style="font-size:12px;margin-top:6px">{ns_status}</div>
-</div>
-
-<div class="card">
-  <h2>Текущие плейлисты</h2>
-  <p class="muted" style="font-size:12px;margin:0 0 8px">
-    На ресивере папка «* Текущий плейлист» — история подборок, которые вы слушали.
-    Можно автоматически удалять те, что <b>не включались</b> дольше указанного срока
-    (по метке последнего воспроизведения).
-  </p>
-  <label>Удалять неигравшие более (дней)</label>
-  <input name="current_max_idle_days" type="number" min="0" max="3650"
-         value="{html.escape(str(cur_idle_days))}"
-         placeholder="0">
-  <p class="muted" style="font-size:12px;margin-top:4px">
-    <code>0</code> — не удалять автоматически. Например <code>14</code> — убрать подборки,
-    которые не играли 2 недели. При сохранении настроек очистка выполняется сразу.
-  </p>
-  <div style="margin-top:10px">
-    <button type="submit" class="ghost" formaction="/current/prune" formnovalidate
-            onclick="return confirm('Удалить текущие плейлисты, не игравшие дольше указанного срока?')">
-      🗑 Удалить сейчас по сроку
-    </button>
-  </div>
 </div>
 
 <div class="card">
@@ -1216,6 +1166,18 @@ def _radio_body(flash: str = "", view_pid: str = "") -> str:
         if proxy_on else
         "Выключено: ресивер получает редирект и сам подключается к станции."
     )
+    pop = getattr(radio, "popular", None)
+    pop_min = int(getattr(pop, "min_minutes", 15) or 15)
+    pop_days = int(getattr(pop, "keep_days", 30) or 30)
+    pop_n = pop.count() if pop is not None else 0
+    pop_on = bool(getattr(radio, "popular_enabled", True)) and proxy_on
+    pop_chk = " checked" if pop_on else ""
+    pop_dis = "" if proxy_on else " disabled"
+    pop_warn = "" if proxy_on else (
+        '<p style="color:#f0a040;font-size:13px;margin:8px 0 0">⚠ Проксирование радио выключено — '
+        'эмулятор не видит, сколько вы слушаете станцию, поэтому «Ваше популярное радио» отключено. '
+        'Включите проксирование выше, после этого можно будет поставить галку.</p>'
+    )
     return f"""
 <div class="card">
   <h2>Совместимость с ресивером</h2>
@@ -1245,6 +1207,39 @@ def _radio_body(flash: str = "", view_pid: str = "") -> str:
         <span class="muted" style="display:block;font-size:13px;margin-top:4px">{proxy_hint}</span>
       </span>
     </label>
+  </form>
+</div>
+<div class="card">
+  <h2>Ваше популярное радио</h2>
+  <p class="muted" style="font-size:13px;margin:0 0 8px">
+    В разделе Radio есть папка «⭐ Ваше популярное радио» — станции, которые вы слушаете чаще всего
+    (сверху самые частые за период). Время считается, пока устройство держит поток станции.
+  </p>
+  <form method="POST" action="/radio/popular_enable">
+    <input type="hidden" name="view_pid" value="{html.escape(view_pid or "")}">
+    <label style="display:flex;align-items:flex-start;gap:10px;color:var(--text);font-size:14px;margin:0 0 10px;cursor:pointer">
+      <input type="checkbox" name="popular_enabled" value="1"{pop_chk}{pop_dis}
+             style="width:auto;margin-top:3px"
+             onchange="this.form.submit()">
+      <span>
+        <strong>Включить «Ваше популярное радио»</strong>
+        <span class="muted" style="display:block;font-size:13px;margin-top:4px">
+          Работает только при включённом проксировании радио.
+        </span>
+      </span>
+    </label>
+  </form>
+  {pop_warn}
+  <form method="POST" action="/radio/popular">
+    <input type="hidden" name="view_pid" value="{html.escape(view_pid or "")}">
+    <label>Добавлять станцию, если слушаете подряд дольше (минут)</label>
+    <input name="popular_min_minutes" type="number" min="1" max="1440" value="{pop_min}">
+    <label>Убирать станцию, если её не включали дольше (дней)</label>
+    <input name="popular_keep_days" type="number" min="1" max="365" value="{pop_days}">
+    <p class="muted" style="font-size:12px;margin-top:6px">
+      Частота считается за те же дни. Сейчас в списке станций: <b>{pop_n}</b>.
+    </p>
+    <div class="row" style="margin-top:10px"><button type="submit">💾 Сохранить</button></div>
   </form>
 </div>
 <div class="card">
@@ -1881,6 +1876,233 @@ def _search_body(flash: str = "", q: str = "", site: str = "deezer", page: int =
 """
 
 
+_SVC_TITLES = {
+    "deezer": "Deezer", "drivemusic": "DriveMusic", "akniga": "AKniga",
+    "yandex": "Яндекс Музыка", "zvuk": "Звук", "kion": "KION",
+    "promodj": "PromoDJ", "zaycev": "Zaycev.net", "files": "Файлы",
+}
+
+
+def _cur_settings() -> dict:
+    cp = _cfg().get("current_playlists") or {}
+
+    def _int(v, d, lo, hi):
+        try:
+            return max(lo, min(int(v), hi))
+        except (TypeError, ValueError):
+            return d
+
+    album = cp.get("skip_same_album")
+    if isinstance(album, str):
+        album = album.lower() in ("1", "true", "yes", "on")
+    return {
+        "max_idle_days": _int(cp.get("max_idle_days"), 0, 0, 3650),
+        "max_folders": _int(cp.get("max_folders"), 100, 1, 1000),
+        "skip_artist_repeats": _int(cp.get("skip_artist_repeats"), 6, 0, 1000),
+        "skip_same_album": True if album is None else bool(album),
+    }
+
+
+def _ago(ts: float) -> str:
+    if not ts:
+        return "—"
+    d = max(0.0, time.time() - ts)
+    when = time.strftime("%d.%m.%Y %H:%M", time.localtime(ts))
+    if d < 3600:
+        return f"{when} ({int(d // 60)} мин. назад)"
+    if d < 86400:
+        return f"{when} ({int(d // 3600)} ч. назад)"
+    return f"{when} ({int(d // 86400)} дн. назад)"
+
+
+def _current_body(open_svcs=None) -> str:
+    """Вкладка «Текущие плейлисты». open_svcs — площадки, раскрытые после действия."""
+    open_svcs = set(open_svcs or ())
+    st = _cur_settings()
+    tree = _STATE.get("tree")
+    rows = []
+    try:
+        rows = tree.current_overview() if tree is not None else []
+    except Exception as e:
+        log.warning("current overview: %s", e)
+
+    def _split_key(key: str):
+        """'yandex.a1@192.168.1.64' -> ('yandex', 1, '192.168.1.64')"""
+        svc, _, ip = key.partition("@")
+        acc = 0
+        m = re.match(r"^(.*)\.a(\d+)$", svc)
+        if m:
+            svc, acc = m.group(1), int(m.group(2))
+        return svc, acc, ip
+
+    # площадка -> ключ истории (аккаунт + устройство) -> папки
+    by_svc: Dict[str, Dict[str, list]] = {}
+    for r in rows:
+        svc = _split_key(r["key"])[0]
+        by_svc.setdefault(svc, {}).setdefault(r["key"], []).append(r)
+
+    def _group_title(key: str) -> str:
+        _svc, acc, ip = _split_key(key)
+        parts = []
+        if acc:
+            parts.append(f"аккаунт {acc + 1}")
+        if ip:
+            parts.append(f"устройство {ip}")
+        return " · ".join(parts) or "общий список"
+
+    sections = []
+    gi = 0
+    for svc in sorted(by_svc, key=lambda x: _SVC_TITLES.get(x, x).lower()):
+        keys = by_svc[svc]
+        n_svc = sum(len(v) for v in keys.values())
+        blocks = []
+        for key in sorted(keys, key=lambda k: _group_title(k).lower()):
+            items = sorted(keys[key], key=lambda r: -r["updated"])
+            trs = []
+            for r in items:
+                val = html.escape(f'{r["key"]}|{r["id"]}', quote=True)
+                pos = f'{r["start"] + 1}/{r["tracks"]}' if r["start"] > 0 else f'—/{r["tracks"]}'
+                trs.append(
+                    f'<tr><td style="width:28px"><input type="checkbox" name="del" value="{val}" '
+                    f'class="cur-row g{gi}" style="width:auto"></td>'
+                    f'<td>{html.escape(r["title"])}</td>'
+                    f'<td style="text-align:right;white-space:nowrap">{r["tracks"]}</td>'
+                    f'<td style="text-align:right;white-space:nowrap">{pos}</td>'
+                    f'<td class="muted" style="white-space:nowrap">{_ago(r["updated"])}</td></tr>'
+                )
+            blocks.append(
+                '<div style="margin:10px 0 14px">'
+                '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">'
+                f'<b style="font-size:13px">{html.escape(_group_title(key))}</b>'
+                f'<span class="muted" style="font-size:12px">плейлистов: {len(items)}</span>'
+                '<label style="display:flex;align-items:center;gap:6px;margin:0;font-size:12px">'
+                f'<input type="checkbox" class="cur-all" data-g="g{gi}" style="width:auto">'
+                'выбрать все</label></div>'
+                '<div style="overflow-x:auto"><table>'
+                '<tr class="muted"><th></th><th style="text-align:left">Плейлист</th>'
+                '<th style="text-align:right">Треков</th><th style="text-align:right">Позиция</th>'
+                '<th style="text-align:left">Играл последний раз</th></tr>'
+                + "".join(trs) + '</table></div></div>'
+            )
+            gi += 1
+        is_open = " open" if svc in open_svcs else ""
+        sections.append(
+            f'<details class="svc"{is_open}>'
+            f'<summary>{html.escape(_SVC_TITLES.get(svc, svc))}'
+            f'<span class="muted" style="font-weight:400;font-size:13px;margin-left:8px">'
+            f'— плейлистов: {n_svc}</span></summary>'
+            f'<div style="padding:0 4px 4px 18px">{"".join(blocks)}</div></details>'
+        )
+
+    total = len(rows)
+    undo_n = 0
+    try:
+        undo_n = tree.deleted_backup_count() if tree is not None else 0
+    except Exception:
+        undo_n = 0
+    undo = ""
+    if undo_n:
+        undo = (
+            '<form method="POST" action="/current/undo" style="margin:0 0 12px;padding:10px 12px;'
+            'border:1px solid #2d3a4f;border-radius:8px;display:flex;align-items:center;gap:12px;'
+            'flex-wrap:wrap">'
+            f'<span style="font-size:13px">Последнее удаление: плейлистов — <b>{undo_n}</b>.</span>'
+            '<button type="submit" class="ghost small">↩ Вернуть удалённые</button></form>'
+        )
+
+    manage = (
+        undo
+        + '<form method="POST" action="/current/delete" id="cur-form">'
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">'
+        f'<span class="muted" style="font-size:13px">Всего сохранено: <b>{total}</b>. '
+        'Нажмите на площадку, чтобы увидеть её плейлисты.</span>'
+        '<button type="submit" id="cur-del" class="small" disabled style="margin-left:auto">'
+        '🗑 Удалить отмеченные</button></div>'
+        + ("".join(sections) if sections else
+           '<p class="muted" style="margin-top:14px">Пока пусто. Плейлист появляется здесь, '
+           'когда вы включаете из него трек на устройстве.</p>')
+        + '</form>'
+        '<style>'
+        'details.svc{border-top:1px solid #243044}'
+        'details.svc>summary{cursor:pointer;padding:12px 4px;font-weight:600;list-style:none}'
+        'details.svc>summary::-webkit-details-marker{display:none}'
+        'details.svc>summary::before{content:"▸";display:inline-block;width:18px;color:var(--muted)}'
+        'details.svc[open]>summary::before{content:"▾"}'
+        '</style>'
+        '<script>(function(){'
+        'var btn=document.getElementById("cur-del"),form=document.getElementById("cur-form");'
+        'function upd(){var n=form.querySelectorAll("input.cur-row:checked").length;'
+        'btn.disabled=!n;btn.textContent="🗑 Удалить отмеченные"+(n?" ("+n+")":"");}'
+        'document.querySelectorAll(".cur-all").forEach(function(cb){'
+        'cb.addEventListener("change",function(){document.querySelectorAll("input."+cb.dataset.g)'
+        '.forEach(function(x){x.checked=cb.checked;});upd();});});'
+        'form.addEventListener("change",upd);'
+        'form.addEventListener("submit",function(e){'
+        'var n=form.querySelectorAll("input.cur-row:checked").length;'
+        'if(!n||!confirm("Удалить отмеченные плейлисты: "+n+" шт.?")){e.preventDefault();}});'
+        'upd();})();</script>'
+    )
+
+    chk = " checked" if st["skip_same_album"] else ""
+    return f"""
+<div class="card">
+  <h2>Что запоминать</h2>
+  <p class="muted" style="font-size:12px;margin:0 0 8px">
+    На устройстве папка «* Текущий плейлист» — история подборок, которые вы слушали. Эмулятор
+    подрезает прослушанное у себя, а устройству отдаёт список как он был при старте плейлиста —
+    подрезанный вариант вы увидите, когда включите другой плейлист и вернётесь в этот.
+  </p>
+  <form method="POST" action="/current/save">
+    <label>Сколько плейлистов помнить (для каждой площадки и устройства)</label>
+    <input name="cur_max_folders" type="number" min="1" max="1000" value="{st['max_folders']}">
+    <p class="muted" style="font-size:12px;margin-top:4px">
+      Когда набирается больше, самые старые (по последнему воспроизведению) удаляются.
+    </p>
+
+    <label>Не сохранять, если один исполнитель встречается в списке столько раз и более</label>
+    <input name="cur_skip_artist" type="number" min="0" max="1000" value="{st['skip_artist_repeats']}">
+    <p class="muted" style="font-size:12px;margin-top:4px">
+      По умолчанию <code>6</code>: страницы артистов и «лучшее исполнителя» в историю не попадают.
+      <code>0</code> — не проверять.
+    </p>
+
+    {_chk_simple("cur_skip_album", "Не сохранять, если у всех треков одинаковый ALBUM", chk,
+                 "это альбом целиком. Если альбома в тегах нет — плейлист сохраняется")}
+
+    <label>Удалять неигравшие более (дней)</label>
+    <input name="cur_idle_days" type="number" min="0" max="3650" value="{st['max_idle_days']}">
+    <p class="muted" style="font-size:12px;margin-top:4px">
+      <code>0</code> — не удалять автоматически. Очистка выполняется при сохранении и при запуске.
+    </p>
+
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button type="submit">💾 Сохранить</button>
+      <button type="submit" class="ghost" formaction="/current/prune" formnovalidate
+              onclick="return confirm('Удалить плейлисты, не игравшие дольше указанного срока?')">
+        🗑 Удалить сейчас по сроку</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Сохранённые плейлисты</h2>
+  {manage}
+</div>
+"""
+
+
+def _chk_simple(name: str, label: str, checked_attr: str, hint: str = "") -> str:
+    h = (f'<span class="muted" style="font-size:12px;margin-left:6px">{html.escape(hint)}</span>'
+         if hint else "")
+    return (
+        '<label style="display:flex;align-items:center;gap:8px;color:var(--text);'
+        'font-size:14px;margin:12px 0 4px">'
+        f'<input type="checkbox" name="{name}" value="1"{checked_attr} style="width:auto">'
+        f'{html.escape(label)}{h}</label>'
+    )
+
+
+
 def _favorites_body(flash: str = "") -> str:
     tree = _STATE.get("tree")
     favs = tree.ak_favorites() if (tree and hasattr(tree, "ak_favorites")) else []
@@ -2094,6 +2316,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 )
             self._send_html(_page("Поиск", body, active="search"))
             return
+        if path == "/current":
+            self._send_html(_page("Текущие плейлисты", _current_body(), active="current"))
+            return
         if path == "/favorites":
             self._send_html(_page(
                 "Избранное",
@@ -2143,26 +2368,98 @@ class WebUIHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8", errors="replace") if length else ""
         form = {k: (v[0] if v else "") for k, v in parse_qs(raw, keep_blank_values=True).items()}
 
-        if path == "/current/clear":
-            svc = (parse_qs(urlparse(self.path).query).get("svc") or [""])[0].strip()
+        if path == "/current/delete":
             tree = _STATE.get("tree")
-            if svc and tree is not None and hasattr(tree, "clear_current_playlist"):
-                tree.clear_current_playlist(svc)
-            self._redirect("/settings")
+            multi = parse_qs(raw, keep_blank_values=True)
+            n = 0
+            touched = set()
+            names = []
+            if tree is not None:
+                # Удаляем СТРОГО отмеченное: пары (ключ истории, id плейлиста)
+                items = []
+                for v in multi.get("del") or []:
+                    key, _, fid = v.partition("|")
+                    if key and fid:
+                        items.append((key, fid))
+                if items:
+                    titles = {(r["key"], r["id"]): r["title"] for r in tree.current_overview()}
+                    names = [titles.get(i, "?") for i in items]
+                    n = tree.delete_current_folders(items)
+                    for key, _fid in items:
+                        touched.add(re.sub(r"\.a\d+$", "", key.partition("@")[0]))
+            if n:
+                shown = ", ".join(f"«{x}»" for x in names[:3]) + ("…" if len(names) > 3 else "")
+                flash = f"Удалено плейлистов: {n} — {shown}"
+            else:
+                flash = "Ничего не выбрано"
+            self._send_html(_page(
+                "Текущие плейлисты", _current_body(open_svcs=touched),
+                flash=flash, active="current",
+            ))
+            return
+
+        if path == "/current/undo":
+            tree = _STATE.get("tree")
+            n = tree.restore_last_deleted() if tree is not None else 0
+            self._send_html(_page(
+                "Текущие плейлисты", _current_body(),
+                flash=(f"Возвращено плейлистов: {n}" if n else "Нечего возвращать"),
+                active="current",
+            ))
+            return
+
+        if path == "/current/save":
+            tree = _STATE.get("tree")
+            cfg = _cfg()
+
+            def _ci(name, default, lo, hi):
+                try:
+                    v = int(form.get(name) or default)
+                except (TypeError, ValueError):
+                    v = default
+                return max(lo, min(v, hi))
+
+            cp = cfg.setdefault("current_playlists", {})
+            cp["max_folders"] = _ci("cur_max_folders", 100, 1, 1000)
+            try:
+                cp["skip_artist_repeats"] = max(0, min(int(form.get("cur_skip_artist", 6)), 1000))
+            except (TypeError, ValueError):
+                cp["skip_artist_repeats"] = 6
+            cp["skip_same_album"] = bool(form.get("cur_skip_album"))
+            cp["max_idle_days"] = _ci("cur_idle_days", 0, 0, 3650)
+            msg = "Сохранено"
+            try:
+                _save_yaml(cfg, _config_path())
+                _STATE["cfg"] = cfg
+            except Exception as e:
+                log.warning("save current_playlists: %s", e)
+                msg = f"Не удалось записать config.yaml: {e}"
+            if tree is not None:
+                try:
+                    cut = tree.configure_current(
+                        max_folders=cp["max_folders"],
+                        skip_artist_repeats=cp["skip_artist_repeats"],
+                        skip_same_album=cp["skip_same_album"],
+                    )
+                    pr = tree.prune_current_playlists(cp["max_idle_days"]) if cp["max_idle_days"] > 0 else 0
+                    if cut or pr:
+                        msg += f". Удалено: по лимиту {cut}, по сроку {pr}"
+                except Exception as e:
+                    log.warning("apply current settings: %s", e)
+            self._send_html(_page("Текущие плейлисты", _current_body(), flash=msg, active="current"))
             return
 
         if path == "/current/prune":
             tree = _STATE.get("tree")
             cfg = _cfg()
             try:
-                days = int(form.get("current_max_idle_days") or
+                days = int(form.get("cur_idle_days") or
                            ((cfg.get("current_playlists") or {}).get("max_idle_days")) or 0)
             except (TypeError, ValueError):
                 days = 0
             n = 0
             if days > 0 and tree is not None and hasattr(tree, "prune_current_playlists"):
                 n = tree.prune_current_playlists(days)
-            # запомнить значение в конфиге
             try:
                 cfg.setdefault("current_playlists", {})
                 cfg["current_playlists"]["max_idle_days"] = max(0, int(days))
@@ -2171,10 +2468,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 log.warning("save current_playlists: %s", e)
             self._send_html(_page(
-                "Настройки", _settings_body(),
-                flash=(f"Удалено текущих плейлистов: {n} (срок {days} дн.)"
+                "Текущие плейлисты", _current_body(),
+                flash=(f"Удалено плейлистов: {n} (срок {days} дн.)"
                        if days > 0 else "Укажите число дней больше 0"),
-                active="settings",
+                active="current",
             ))
             return
 
@@ -2278,11 +2575,71 @@ class WebUIHandler(BaseHTTPRequestHandler):
             if "radio" not in cfg or not isinstance(cfg.get("radio"), dict):
                 cfg["radio"] = {}
             cfg["radio"]["proxy"] = enabled
+            if not enabled and radio is not None and getattr(radio, "popular", None) is not None:
+                # без проксирования популярное радио работать не может — выключаем сами;
+                # снова включить можно будет только после включения проксирования
+                radio.popular_enabled = False
+                cfg["radio"]["popular_enabled"] = False
             try:
                 _save_yaml(cfg, _config_path())
             except Exception as e:
                 log.warning("save radio proxy: %s", e)
-            msg = "Проксирование радио включено" if enabled else "Проксирование радио выключено"
+            if enabled:
+                msg = "Проксирование радио включено. «Ваше популярное радио» можно включить в своей карточке"
+            else:
+                msg = "Проксирование радио выключено. «Ваше популярное радио» тоже выключено"
+            self._send_html(_page("Радио", _radio_body(view_pid=view_pid), flash=msg, active="radio"))
+            return
+
+        if path == "/radio/popular_enable":
+            radio = _STATE.get("radio")
+            view_pid = (form.get("view_pid") or "").strip()
+            want = (form.get("popular_enabled") or "").strip() in ("1", "on", "true", "yes")
+            if radio is None or getattr(radio, "popular", None) is None:
+                msg = "Популярное радио не инициализировано"
+            elif want and not bool(getattr(radio, "proxy", True)):
+                msg = "Сначала включите проксирование радио — без него популярное радио не работает"
+            else:
+                radio.popular_enabled = want
+                cfg = _cfg()
+                if "radio" not in cfg or not isinstance(cfg.get("radio"), dict):
+                    cfg["radio"] = {}
+                cfg["radio"]["popular_enabled"] = want
+                try:
+                    _save_yaml(cfg, _config_path())
+                except Exception as e:
+                    log.warning("save popular_enabled: %s", e)
+                msg = "«Ваше популярное радио» включено" if want else "«Ваше популярное радио» выключено"
+            self._send_html(_page("Радио", _radio_body(view_pid=view_pid), flash=msg, active="radio"))
+            return
+
+        if path == "/radio/popular":
+            radio = _STATE.get("radio")
+            view_pid = (form.get("view_pid") or "").strip()
+
+            def _pi(name, default, lo, hi):
+                try:
+                    v = int(form.get(name) or default)
+                except (TypeError, ValueError):
+                    v = default
+                return max(lo, min(v, hi))
+
+            mins = _pi("popular_min_minutes", 15, 1, 1440)
+            days = _pi("popular_keep_days", 30, 1, 365)
+            cfg = _cfg()
+            if "radio" not in cfg or not isinstance(cfg.get("radio"), dict):
+                cfg["radio"] = {}
+            cfg["radio"]["popular_min_minutes"] = mins
+            cfg["radio"]["popular_keep_days"] = days
+            msg = f"Сохранено: от {mins} мин подряд, убирать через {days} дн."
+            try:
+                _save_yaml(cfg, _config_path())
+            except Exception as e:
+                log.warning("save radio popular: %s", e)
+                msg = f"Не удалось записать config.yaml: {e}"
+            pop = getattr(radio, "popular", None) if radio else None
+            if pop is not None:
+                pop.configure(min_minutes=mins, keep_days=days)
             self._send_html(_page("Радио", _radio_body(view_pid=view_pid), flash=msg, active="radio"))
             return
 
@@ -2664,19 +3021,6 @@ class WebUIHandler(BaseHTTPRequestHandler):
             cfg["covers"]["max_px"] = _i("covers_max_px", 600, 0, 4096)
             cfg["covers"]["cache_items"] = _i("covers_cache_items", 48, 4, 512)
 
-            # --- текущие плейлисты: автоочистка по сроку ---
-            cfg.setdefault("current_playlists", {})
-            idle_days = _i("current_max_idle_days", 0, 0, 3650)
-            cfg["current_playlists"]["max_idle_days"] = idle_days
-            prune_n = 0
-            if idle_days > 0:
-                tree_pre = _STATE.get("tree")
-                if tree_pre is not None and hasattr(tree_pre, "prune_current_playlists"):
-                    try:
-                        prune_n = tree_pre.prune_current_playlists(idle_days)
-                    except Exception as e:
-                        log.warning("prune current on save: %s", e)
-
             path_cfg = _config_path()
             try:
                 _save_yaml(cfg, path_cfg)
@@ -2707,6 +3051,15 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         radio.proxy = bool(cfg["radio"].get("proxy", True))
                     if "auto_mp3_suffix" in (cfg.get("radio") or {}):
                         radio.auto_mp3_suffix = bool(cfg["radio"].get("auto_mp3_suffix", True))
+                    if getattr(radio, "popular", None) is not None:
+                        _pe = (cfg.get("radio") or {}).get("popular_enabled")
+                        if isinstance(_pe, str):
+                            _pe = _pe.lower() in ("1", "true", "yes", "on")
+                        radio.popular_enabled = True if _pe is None else bool(_pe)
+                        radio.popular.configure(
+                            min_minutes=cfg["radio"].get("popular_min_minutes", 15),
+                            keep_days=cfg["radio"].get("popular_keep_days", 30),
+                        )
                     radio.reload()
 
                 # Мультиаккаунты: применяем списки токенов без перезапуска.

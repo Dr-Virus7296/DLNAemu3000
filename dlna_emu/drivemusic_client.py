@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -523,6 +524,29 @@ ARTIST_CARD_RE = re.compile(
 )
 
 
+class _TtlSet:
+    """Множество «недоступных» треков с истечением: сбой сайта/ссылки — не навсегда."""
+
+    def __init__(self, ttl: float = 90.0):
+        self.ttl = ttl
+        self._d: Dict[str, float] = {}
+
+    def add(self, key: str) -> None:
+        self._d[str(key)] = time.time()
+
+    def discard(self, key: str) -> None:
+        self._d.pop(str(key), None)
+
+    def __contains__(self, key) -> bool:
+        ts = self._d.get(str(key))
+        if ts is None:
+            return False
+        if time.time() - ts > self.ttl:
+            self._d.pop(str(key), None)
+            return False
+        return True
+
+
 @dataclass
 class DmTrack:
     id: str
@@ -600,7 +624,7 @@ class DriveMusicClient:
         self._genre_cache: Dict[str, Tuple[float, List[DmTrack]]] = {}
         self._stream_cache: Dict[str, Tuple[float, str]] = {}
         self._page_cache: Dict[str, str] = {}
-        self._unavailable: set = set()
+        self._unavailable = _TtlSet(90.0)
         # подборки группы, подтянутые с сайта: group -> (ts, [(slug, title)])
         self._subs_cache: Dict[str, Tuple[float, List[Tuple[str, str]]]] = {}
         # каталоги, подтянутые с сайта: ключ -> (ts, [(slug, title)])
@@ -1127,8 +1151,44 @@ class DriveMusicClient:
         )
         return all_tracks[:limit]
 
-    def resolve_stream_url(self, track_id: str, page_url: str = "") -> Optional[str]:
+    # ---------- обновление ссылок ----------
+
+    def register_track(self, track_id: str, page_url: str) -> None:
+        """Запомнить страницу трека (из сохранённого «Текущего плейлиста»)."""
+        if track_id and page_url:
+            self._page_cache[str(track_id)] = page_url
+
+    def invalidate(self, track_id: str) -> None:
+        """Забыть ссылку на mp3 и метку «недоступен» — следующий play распарсит страницу заново."""
         tid = str(track_id)
+        self._stream_cache.pop(tid, None)
+        self._unavailable.discard(tid)
+
+    def recover_page_url(self, track_id: str, query: str) -> str:
+        """Страницы трека нет (сохранённый список старого формата / перезапуск):
+        ищем трек на сайте по названию и берём страницу с тем же id."""
+        tid = str(track_id)
+        q = (query or "").strip()
+        if not q:
+            return ""
+        for variant in (q, q.split(" — ", 1)[-1].strip()):
+            if not variant:
+                continue
+            try:
+                for tr in self.search_tracks(variant, limit=60):
+                    if str(tr.id) == tid and tr.page_url:
+                        self._page_cache[tid] = tr.page_url
+                        log.info("DriveMusic: страница трека %s восстановлена поиском", tid)
+                        return tr.page_url
+            except Exception as e:
+                log.debug("DriveMusic recover %s: %s", tid, e)
+        return ""
+
+    def resolve_stream_url(self, track_id: str, page_url: str = "",
+                           force: bool = False, title_hint: str = "") -> Optional[str]:
+        tid = str(track_id)
+        if force:
+            self.invalidate(tid)
         if tid in self._unavailable:
             return None
         now = time.time()
@@ -1138,9 +1198,13 @@ class DriveMusicClient:
                 return url
 
         url = page_url or self._page_cache.get(tid)
+        if not url and title_hint:
+            url = self.recover_page_url(tid, title_hint)
         if not url:
             log.warning("DriveMusic: no page_url for track %s", tid)
             return None
+        if page_url:
+            self._page_cache[tid] = page_url
 
         body = self._get(url, referer=self.base)
         if not body:
@@ -1159,34 +1223,59 @@ class DriveMusicClient:
         self._stream_cache[tid] = (now, chosen)
         return chosen
 
-    def open_stream(self, track_id: str, page_url: str = ""):
+    def open_stream(self, track_id: str, page_url: str = "", title_hint: str = ""):
         self._resolve_base()
-        stream_url = self.resolve_stream_url(track_id, page_url)
-        if not stream_url:
-            return None
-        try:
-            headers = {
-                "User-Agent": UA,
-                "Referer": page_url or self.base,
-                "Origin": self.base,
-                "Accept": "audio/mpeg,application/octet-stream,*/*;q=0.8",
-                "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
-                "Sec-Fetch-Dest": "audio",
-                "Sec-Fetch-Mode": "no-cors",
-                "Sec-Fetch-Site": "same-origin",
-            }
-            r = self.session.get(
-                stream_url, headers=headers, stream=True, timeout=30
-            )
-            if r.status_code != 200:
-                log.warning("DriveMusic stream %s → %s", track_id, r.status_code)
-                r.close()
-                self._unavailable.add(str(track_id))
-                return None
-            mime = r.headers.get("Content-Type") or "audio/mpeg"
-            cl = r.headers.get("Content-Length")
-            content_length = int(cl) if cl and cl.isdigit() else None
-            return r, mime, content_length, True
-        except Exception as e:
-            log.warning("DriveMusic open_stream %s: %s", track_id, e)
-            return None
+        # Ссылка на mp3 могла устареть: если первая попытка не удалась — парсим страницу
+        # трека заново и пробуем ещё раз.
+        for attempt in (1, 2):
+            stream_url = self.resolve_stream_url(
+                track_id, page_url, force=(attempt == 2), title_hint=title_hint)
+            if not stream_url:
+                continue
+            try:
+                headers = {
+                    "User-Agent": UA,
+                    "Referer": page_url or self._page_cache.get(str(track_id)) or self.base,
+                    "Origin": self.base,
+                    "Accept": "audio/mpeg,application/octet-stream,*/*;q=0.8",
+                    "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+                    "Sec-Fetch-Dest": "audio",
+                    "Sec-Fetch-Mode": "no-cors",
+                    "Sec-Fetch-Site": "same-origin",
+                }
+                r = self.session.get(
+                    stream_url, headers=headers, stream=True, timeout=30
+                )
+                if r.status_code != 200:
+                    log.warning("DriveMusic stream %s → %s (попытка %d)",
+                                track_id, r.status_code, attempt)
+                    r.close()
+                    self.invalidate(track_id)
+                    continue
+                mime = r.headers.get("Content-Type") or "audio/mpeg"
+                cl = r.headers.get("Content-Length")
+                content_length = int(cl) if cl and cl.isdigit() else None
+                return r, mime, content_length, True
+            except Exception as e:
+                log.warning("DriveMusic open_stream %s: %s (попытка %d)", track_id, e, attempt)
+                self.invalidate(track_id)
+        self._unavailable.add(str(track_id))   # ненадолго (TTL), не навсегда
+        return None
+
+    def refresh_links(self, items: List[Tuple[str, str, str]], count: int = 8,
+                      delay: float = 0.5) -> int:
+        """Заново распарсить ссылки на mp3 для треков items = [(id, page_url, title_hint), ...]
+        (по порядку, начиная с того, на котором закончили). Синхронно; зовите из потока.
+        Возвращает число успешно разобранных."""
+        ok = 0
+        for tid, page_url, title in items[:max(1, count)]:
+            try:
+                self.invalidate(tid)
+                if page_url:
+                    self.register_track(tid, page_url)
+                if self.resolve_stream_url(tid, page_url, title_hint=title):
+                    ok += 1
+            except Exception as e:
+                log.debug("DriveMusic refresh %s: %s", tid, e)
+            time.sleep(delay)
+        return ok

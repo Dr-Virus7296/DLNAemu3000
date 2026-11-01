@@ -2,6 +2,8 @@
 
 ROOT = "0"
 RADIO = "radio"
+# Папка «Ваше популярное радио». id с «__» не может совпасть с плейлистом (_safe_id их срезает)
+RADIO_POPULAR = "radio:__popular__"
 FILES = "files"
 LOCALPL = "localpl"
 NET = "net"

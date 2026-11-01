@@ -145,6 +145,10 @@ class RadioLibrary:
         self.auto_mp3_suffix = bool(auto_mp3_suffix)
         # True: поток станции идёт через эмулятор; False: редирект 302 на станцию
         self.proxy = bool(proxy)
+        # «Ваше популярное радио» (RadioPopular) — подключается в run_server
+        self.popular = None
+        # Галка «Ваше популярное радио» в админке (по умолчанию включено)
+        self.popular_enabled = True
         self._playlists: Dict[str, RadioPlaylist] = {}
         self._mtime: float = 0.0
         self.reload()
@@ -202,6 +206,32 @@ class RadioLibrary:
     def get_playlist(self, pid: str) -> Optional[RadioPlaylist]:
         self.maybe_reload()
         return self._playlists.get(pid)
+
+    def popular_active(self) -> bool:
+        """Работает ли «Ваше популярное радио»: нужна галка И проксирование радио.
+
+        Без проксирования эмулятор не видит, сколько вы слушаете станцию.
+        """
+        return self.popular is not None and bool(self.popular_enabled) and bool(self.proxy)
+
+    def popular_stations(self) -> List[Tuple[str, int, RadioStation]]:
+        """Станции «Ваше популярное радио»: (id плейлиста, индекс, станция) по убыванию популярности.
+
+        Станция ищется по ссылке в текущих M3U; если её из плейлистов убрали — не показываем.
+        """
+        pop = self.popular
+        if pop is None or not self.popular_active():
+            return []
+        where: Dict[str, Tuple[str, int, RadioStation]] = {}
+        for pl in self.list_playlists():
+            for i, st in enumerate(pl.stations):
+                where.setdefault(st.url, (pl.id, i, st))
+        out: List[Tuple[str, int, RadioStation]] = []
+        for row in pop.top():
+            hit = where.get(row["url"])
+            if hit:
+                out.append(hit)
+        return out
 
     def get_station(self, pid: str, index: int) -> Optional[RadioStation]:
         pl = self.get_playlist(pid)
