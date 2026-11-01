@@ -132,6 +132,15 @@ def resolve_radio_folder(value: str = "") -> Path:
     return p if p.is_absolute() else APP_DIR / p
 
 
+def clamp_proxy_retries(v, default: int = 5) -> int:
+    """Сколько раз переподключаться к станции при таймауте/обрыве (0..20)."""
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        n = default
+    return max(0, min(n, 20))
+
+
 class RadioLibrary:
     def __init__(
         self,
@@ -139,12 +148,15 @@ class RadioLibrary:
         reload_on_browse: bool = True,
         auto_mp3_suffix: bool = True,
         proxy: bool = True,
+        proxy_retries: int = 5,
     ):
         self.folder = resolve_radio_folder(folder)
         self.reload_on_browse = reload_on_browse
         self.auto_mp3_suffix = bool(auto_mp3_suffix)
         # True: поток станции идёт через эмулятор; False: редирект 302 на станцию
         self.proxy = bool(proxy)
+        # Повторы при таймауте/обрыве потока станции (0 — не повторять)
+        self.proxy_retries = clamp_proxy_retries(proxy_retries)
         # «Ваше популярное радио» (RadioPopular) — подключается в run_server
         self.popular = None
         # Галка «Ваше популярное радио» в админке (по умолчанию включено)

@@ -29,6 +29,9 @@ CONNECT_TIMEOUT = 10
 READ_TIMEOUT = 20
 CHUNK = 8192
 MAX_REDIRECTS = 5
+RETRY_DELAY = 1.0          # пауза перед повтором (растёт: 1, 2, 3 с, не больше 3)
+INITIAL_BUDGET = 30.0      # сек: сколько всего пробуем открыть станцию при старте
+RETRY_RESET_BYTES = 32768  # после стольких байт на новом соединении счётчик попыток обнуляется
 
 _ICY_MAX_METAINT = 262144
 _TITLE_RE = re.compile(rb"StreamTitle='(.*?)';|StreamTitle='(.*)$", re.S)
@@ -176,6 +179,43 @@ class _IcyParser:
         return bytes(out)
 
 
+class _IcyMux:
+    """Вставляет блоки ICY-метаданных в чистое аудио через каждые metaint байт.
+
+    Нужен после переподключения: ресивер считает байты с начала ИСХОДНОГО соединения,
+    а новое соединение со станцией начинает свой отсчёт заново — границы блоков
+    пришлось бы иначе перепутать, и звук «посыпался» бы.
+    """
+
+    def __init__(self, metaint: int, left: int, title_fn: Callable[[], Optional[str]]):
+        self.metaint = metaint
+        self.left = left if 0 < left <= metaint else metaint
+        self.title_fn = title_fn
+        self.sent: Optional[str] = None
+
+    def _block(self) -> bytes:
+        t = (self.title_fn() or "")
+        if t == self.sent:
+            return b"\x00"
+        self.sent = t
+        payload = ("StreamTitle='%s';" % t.replace("'", "’")).encode("utf-8")[:4080]
+        payload += b"\x00" * ((-len(payload)) % 16)
+        return bytes([len(payload) // 16]) + payload
+
+    def feed(self, audio: bytes) -> bytes:
+        out = bytearray()
+        i, n = 0, len(audio)
+        while i < n:
+            take = min(self.left, n - i)
+            out += audio[i:i + take]
+            i += take
+            self.left -= take
+            if self.left == 0:
+                out += self._block()
+                self.left = self.metaint
+        return bytes(out)
+
+
 class _Stream:
     """Итерируемый поток; metaint > 0 — ресиверу отдаём метаданные ICY как есть."""
 
@@ -281,35 +321,61 @@ def _open_raw_icy(url: str):
     return gen(), hdrs.get("content-type", ""), sock.close, _parse_metaint(hdrs.get("icy-metaint"))
 
 
-def open_station(url: str, client_meta: bool = False, key: Optional[str] = None):
+def _open_any(url: str):
+    """Один проход по вариантам адреса. → (результат | None, была_ли_сетевая_ошибка)."""
+    net_err = False
+    for cand in _candidates(url):
+        try:
+            res = _open_one(cand, depth=0)
+        except Exception as e:
+            log.info("radio proxy %s: %s", cand, e)
+            net_err = True
+            res = None
+        if res:
+            return res, net_err
+    return None, net_err
+
+
+def open_station(url: str, client_meta: bool = False, key: Optional[str] = None,
+                 retries: int = 0):
     """Открыть поток станции. None — проксировать не получилось/нельзя.
 
     Возвращает (поток, content-type, close). Метаданные ICY всегда разбираются
     (название трека → live_title(key)); ресиверу они отдаются только если он сам
     просил (client_meta=True) — тогда у потока .metaint > 0 и нужен заголовок
     icy-metaint, иначе вырезаются, чтобы не портить звук.
+
+    retries — сколько раз переподключаться к станции при таймауте/обрыве (и при
+    открытии, и посреди воспроизведения; ресивер обрыва не замечает). Все попытки
+    провалены → поток завершается, ресивер сам переходит к следующему.
     """
     key = key or url
+    retries = max(0, int(retries or 0))
     _live_reset(key)
-    for cand in _candidates(url):
-        try:
-            res = _open_one(cand, depth=0)
-        except Exception as e:
-            log.info("radio proxy %s: %s", cand, e)
-            res = None
-        if res:
-            return _wrap(res, client_meta, key)
-    _live_flag(key, failed=True)
-    return None
+    deadline = time.time() + INITIAL_BUDGET
+    res = None
+    for attempt in range(retries + 1):
+        res, net_err = _open_any(url)
+        if res or not net_err:      # HLS / HTTP-ошибка — повтор не поможет
+            break
+        if attempt < retries and time.time() < deadline:
+            log.info("radio proxy %s: не открылась, повтор %d/%d", url, attempt + 1, retries)
+            time.sleep(min(RETRY_DELAY * (attempt + 1), 3.0))
+        else:
+            break
+    if not res:
+        _live_flag(key, failed=True)
+        return None
+    return _wrap(res, client_meta, key, url, retries)
 
 
-def _wrap(res, client_meta: bool, key: str):
+def _wrap(res, client_meta: bool, key: str, url: str = "", retries: int = 0):
     it, ct, close, metaint = res
     if not metaint:
         log.info("radio proxy %s: станция не отдала icy-metaint — названия трека не будет", key)
         _live_flag(key, nometa=True)
-        return _Stream(it, 0), ct, close
-    state = {"closed": False}
+    out_metaint = metaint if (client_meta and metaint) else 0   # что обещаем ресиверу
+    state = {"closed": False, "close": close}
 
     def on_meta(m: bytes) -> None:
         _live_set(key, m)
@@ -318,24 +384,89 @@ def _wrap(res, client_meta: bool, key: str):
             state["last"] = t
             log.info("radio proxy %s: сейчас играет «%s»", key, t)
 
-    parser = _IcyParser(metaint, on_meta)
     _live_open(key)
 
-    def close2() -> None:
+    def close_all() -> None:
         if not state["closed"]:
             state["closed"] = True
             _live_close(key)
-        close()
+        try:
+            state["close"]()
+        except Exception:
+            pass
 
-    def gen2() -> Iterator[bytes]:
-        for chunk in it:
-            audio = parser.feed(chunk)
-            if client_meta:
-                yield chunk
-            elif audio:
-                yield audio
+    def gen() -> Iterator[bytes]:
+        cur_it = it
+        parser = _IcyParser(metaint, on_meta) if metaint else None
+        mux: Optional[_IcyMux] = None     # появляется после переподключения
+        attempts = 0
+        conn_bytes = 0
+        while True:
+            err = "станция закрыла поток"
+            try:
+                for chunk in cur_it:
+                    if mux is not None:
+                        audio = parser.feed(chunk) if parser else chunk
+                        out = mux.feed(audio) if audio else b""
+                    elif out_metaint:
+                        parser.feed(chunk)            # только следим за позицией
+                        out = chunk                   # ресиверу — байты как есть
+                    else:
+                        out = parser.feed(chunk) if parser else chunk
+                    if not out:
+                        continue
+                    conn_bytes += len(chunk)
+                    if attempts and conn_bytes >= RETRY_RESET_BYTES:
+                        attempts = 0
+                    yield out
+            except Exception as e:          # таймаут чтения / обрыв источника
+                err = str(e) or e.__class__.__name__
+            if state["closed"]:
+                return
+            try:
+                state["close"]()
+            except Exception:
+                pass
+            if retries <= 0:
+                log.info("radio proxy %s: %s", key, err)
+                return
+            # ---- переподключение
+            res2 = None
+            while True:
+                attempts += 1
+                if attempts > retries:
+                    log.info("radio proxy %s: %d попыток подряд не удались (%s) — "
+                             "завершаю поток, ресивер перейдёт к следующему", key, retries, err)
+                    return
+                log.info("radio proxy %s: обрыв (%s) — переподключение %d/%d",
+                         key, err, attempts, retries)
+                time.sleep(min(RETRY_DELAY * attempts, 3.0))
+                if state["closed"]:
+                    return
+                res2, _ = _open_any(url)
+                if res2:
+                    break
+            cur_it, _ct2, state["close"], metaint2 = res2
+            old = parser
+            parser = _IcyParser(metaint2, on_meta) if metaint2 else None
+            conn_bytes = 0
+            if out_metaint and mux is None:
+                # доводим блок метаданных, на котором оборвалось, до конца и
+                # дальше сами расставляем границы ICY для ресивера
+                filler = b""
+                left = out_metaint
+                if old is not None:
+                    if old.meta_left > 0:
+                        filler = b"\x00" * old.meta_left
+                    elif old.need_len:
+                        filler = b"\x00"
+                    else:
+                        left = old.audio_left
+                mux = _IcyMux(out_metaint, left, lambda: live_title(key))
+                if filler:
+                    yield filler
 
-    return _Stream(gen2(), metaint if client_meta else 0), ct, close2
+    return _Stream(gen(), out_metaint), ct, close_all
 
 
 def _open_one(url: str, depth: int):

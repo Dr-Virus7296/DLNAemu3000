@@ -537,12 +537,13 @@ class DLNAHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return True
         client_meta = (self.headers.get("Icy-MetaData") or "").strip() == "1"
-        res = radio_proxy.open_station(st.url, client_meta=client_meta, key=st.url)
+        radio_lib = self.server.radio  # type: ignore
+        retries = int(getattr(radio_lib, "proxy_retries", 5) or 0)
+        res = radio_proxy.open_station(st.url, client_meta=client_meta, key=st.url, retries=retries)
         if not res:
             log.info("radio proxy: %s недоступна для проксирования → редирект", st.name)
             return False
         it, ctype, close = res
-        radio_lib = self.server.radio  # type: ignore
         popular = radio_lib.popular if getattr(radio_lib, "popular_active", lambda: False)() else None
         session = popular.begin(st.url, st.name) if popular is not None else None
         try:
@@ -2208,6 +2209,7 @@ def run_server(cfg: dict, config_path: str = "config.yaml") -> None:
         reload_on_browse=bool(radio_cfg.get("reload_on_browse", True)),
         auto_mp3_suffix=bool(radio_cfg.get("auto_mp3_suffix", True)),
         proxy=bool(radio_cfg.get("proxy", True)),
+        proxy_retries=radio_cfg.get("proxy_retries", 5),
     )
     # «Ваше популярное радио»: статистика прослушивания лежит рядом с config.yaml
     try:

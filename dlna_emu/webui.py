@@ -1166,6 +1166,14 @@ def _radio_body(flash: str = "", view_pid: str = "") -> str:
         if proxy_on else
         "Выключено: ресивер получает редирект и сам подключается к станции."
     )
+    retries_n = int(getattr(radio, "proxy_retries", 5) or 0)
+    retries_hint = (
+        f"При таймауте или обрыве потока эмулятор переподключается к той же станции (до {retries_n} раз подряд), "
+        "ресивер этого не замечает. Если все попытки провалены — поток завершается и ресивер сам "
+        "переходит к следующему."
+        if retries_n > 0 else
+        "Повторов нет: при таймауте поток завершается, и ресивер сразу переходит к следующему."
+    )
     pop = getattr(radio, "popular", None)
     pop_min = int(getattr(pop, "min_minutes", 15) or 15)
     pop_days = int(getattr(pop, "keep_days", 30) or 30)
@@ -1207,6 +1215,13 @@ def _radio_body(flash: str = "", view_pid: str = "") -> str:
         <span class="muted" style="display:block;font-size:13px;margin-top:4px">{proxy_hint}</span>
       </span>
     </label>
+  </form>
+  <form method="POST" action="/radio/proxy_retries" style="margin-top:14px">
+    <input type="hidden" name="view_pid" value="{html.escape(view_pid or "")}">
+    <label>Повторов при таймауте/обрыве потока (0 — не повторять)</label>
+    <input name="proxy_retries" type="number" min="0" max="20" value="{retries_n}">
+    <p class="muted" style="font-size:12px;margin-top:6px">{retries_hint}</p>
+    <div class="row" style="margin-top:10px"><button type="submit">💾 Сохранить</button></div>
   </form>
 </div>
 <div class="card">
@@ -2591,6 +2606,26 @@ class WebUIHandler(BaseHTTPRequestHandler):
             self._send_html(_page("Радио", _radio_body(view_pid=view_pid), flash=msg, active="radio"))
             return
 
+        if path == "/radio/proxy_retries":
+            from .radio_m3u import clamp_proxy_retries
+            radio = _STATE.get("radio")
+            view_pid = (form.get("view_pid") or "").strip()
+            n = clamp_proxy_retries(form.get("proxy_retries"), default=5)
+            if radio:
+                radio.proxy_retries = n
+            cfg = _cfg()
+            if "radio" not in cfg or not isinstance(cfg.get("radio"), dict):
+                cfg["radio"] = {}
+            cfg["radio"]["proxy_retries"] = n
+            msg = f"Сохранено: повторов при обрыве потока — {n}" if n else "Сохранено: повторы выключены"
+            try:
+                _save_yaml(cfg, _config_path())
+            except Exception as e:
+                log.warning("save radio proxy_retries: %s", e)
+                msg = f"Не удалось записать config.yaml: {e}"
+            self._send_html(_page("Радио", _radio_body(view_pid=view_pid), flash=msg, active="radio"))
+            return
+
         if path == "/radio/popular_enable":
             radio = _STATE.get("radio")
             view_pid = (form.get("view_pid") or "").strip()
@@ -3049,6 +3084,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     radio.reload_on_browse = bool(cfg["radio"].get("reload_on_browse", True))
                     if "proxy" in (cfg.get("radio") or {}):
                         radio.proxy = bool(cfg["radio"].get("proxy", True))
+                    if "proxy_retries" in (cfg.get("radio") or {}):
+                        from .radio_m3u import clamp_proxy_retries
+                        radio.proxy_retries = clamp_proxy_retries(cfg["radio"].get("proxy_retries"))
                     if "auto_mp3_suffix" in (cfg.get("radio") or {}):
                         radio.auto_mp3_suffix = bool(cfg["radio"].get("auto_mp3_suffix", True))
                     if getattr(radio, "popular", None) is not None:
