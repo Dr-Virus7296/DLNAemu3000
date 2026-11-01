@@ -137,6 +137,7 @@ class DriveMusicProvider(ServiceProvider):
                     "oid": oid, "title": title, "url": url,
                     "mime": "audio/mpeg", "artist": tr.artist or "",
                     "duration": tr.duration or 0, "album": "",
+                    "page_url": tr.page_url or "",
                 })
             if track_dicts:
                 self.t.set_current_playlist("drivemusic", f"Жанр {slug}", track_dicts)
@@ -169,6 +170,7 @@ class DriveMusicProvider(ServiceProvider):
                     "oid": oid, "title": title, "url": url,
                     "mime": "audio/mpeg", "artist": tr.artist or "",
                     "duration": tr.duration or 0, "album": "",
+                    "page_url": tr.page_url or "",
                 })
             if track_dicts:
                 self.t.set_current_playlist("drivemusic", f"Артист {slug}", track_dicts)

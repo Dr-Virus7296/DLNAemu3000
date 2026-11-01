@@ -20,9 +20,22 @@ class RadioProvider(ServiceProvider):
         if object_id == RADIO:
             # Только плейлисты из m3u — история «Текущий плейлист» для радио не нужна
             items = []
+            if self.t.radio.popular_active():
+                items.append(self.t._container(
+                    RADIO_POPULAR, RADIO, "⭐ Ваше популярное радио",
+                    len(self.t.radio.popular_stations()),
+                ))
             for pl in self.t.radio.list_playlists():
                 items.append(self.t._container(f"radio:{pl.id}", RADIO, pl.title, len(pl.stations)))
             return items
+        if object_id == RADIO_POPULAR:
+            out = []
+            for rank, (pid, i, st) in enumerate(self.t.radio.popular_stations(), 1):
+                # тот же oid и /stream/radio/<pid>/<i>, что и в плейлисте: проксирование,
+                # обложки и учёт прослушивания работают без отдельной логики
+                url = f"{self.t.base_url}/stream/radio/{pid}/{i}"
+                out.append(self.t._item(f"radio:{pid}:{i}", object_id, f"{rank}. {st.name}", url))
+            return out
         if object_id.startswith("radio:"):
             parts = object_id.split(":")
             if len(parts) == 2:
@@ -41,6 +54,7 @@ class RadioProvider(ServiceProvider):
         return []
 
     def _radio_count(self) -> int:
-        return len(self.t.radio.list_playlists())
+        n = len(self.t.radio.list_playlists())
+        return n + 1 if self.t.radio.popular_active() else n      # + «Ваше популярное радио»
 
 
