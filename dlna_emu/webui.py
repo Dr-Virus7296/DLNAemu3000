@@ -162,8 +162,290 @@ def _save_yaml(cfg: dict, path: str) -> None:
 
 
 # ============================================================
-#  Шаблон
+#  Шаблон (чёрно-белая тема: боковая панель + плеер-строка)
 # ============================================================
+
+_THEME_BOOT = (
+    "(function(){try{var t=localStorage.getItem('dlna-theme');"
+    "if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();"
+)
+
+_CSS = """
+:root{
+  --bg:#050505; --bg2:#0a0a0a; --card:#0e0e0e; --card2:#161616;
+  --line:#222; --line2:#333; --text:#f5f5f5; --text2:#c8c8c8; --muted:#8a8a8a;
+  --acc:#fff; --acc-fg:#000; --acc-soft:rgba(255,255,255,.08);
+  --ok:#fff; --ok-bg:#1a1a1a; --err:#fff; --err-bg:#262626; --warn:#bdbdbd;
+  --shadow:0 1px 0 rgba(255,255,255,.04) inset,0 10px 30px rgba(0,0,0,.45);
+  --side:252px; --player:76px;
+  --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+:root[data-theme=light]{
+  --bg:#f4f4f4; --bg2:#fff; --card:#fff; --card2:#efefef;
+  --line:#e3e3e3; --line2:#cfcfcf; --text:#0a0a0a; --text2:#333; --muted:#6c6c6c;
+  --acc:#000; --acc-fg:#fff; --acc-soft:rgba(0,0,0,.06);
+  --ok:#000; --ok-bg:#ececec; --err:#000; --err-bg:#e2e2e2; --warn:#555;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 10px 30px rgba(0,0,0,.06);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--text);line-height:1.5;font-size:14px;
+  -webkit-font-smoothing:antialiased;letter-spacing:-.003em}
+::selection{background:var(--acc);color:var(--acc-fg)}
+a{color:var(--text);text-decoration-color:var(--line2);text-underline-offset:3px}
+a:hover{text-decoration-color:var(--text)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:10px;border:2px solid var(--bg)}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- каркас ---------- */
+.side{position:fixed;inset:0 auto 0 0;width:var(--side);background:var(--bg);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;padding:18px 14px 14px;z-index:30;overflow-y:auto;transition:transform .25s ease}
+.brand{display:flex;align-items:center;gap:12px;padding:4px 8px 22px}
+.mark{width:38px;height:38px;border-radius:11px;background:var(--acc);color:var(--acc-fg);display:grid;place-items:center;flex:none}
+.mark svg{width:22px;height:22px}
+.bname{font-weight:700;font-size:17px;letter-spacing:-.02em;line-height:1.1}
+.bsub{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);margin-top:3px;text-transform:uppercase}
+.navgrp{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);padding:16px 12px 6px}
+.side a.nav{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:10px;color:var(--muted);
+  text-decoration:none;font-size:14px;font-weight:500;position:relative;transition:background .15s,color .15s}
+.side a.nav svg{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.side a.nav:hover{color:var(--text);background:var(--acc-soft)}
+.side a.nav.active{color:var(--text);background:var(--card2);box-shadow:inset 0 0 0 1px var(--line2)}
+.side a.nav.active::before{content:"";position:absolute;left:-14px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--acc)}
+.side-foot{margin-top:auto;padding-top:14px;display:flex;flex-direction:column;gap:10px}
+.srv{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--acc);box-shadow:0 0 0 3px var(--acc-soft);flex:none;animation:pulse 2.4s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 3px var(--acc-soft)}50%{box-shadow:0 0 0 6px transparent}}
+.srv b{display:block;font-size:12.5px;font-weight:600}
+.srv span{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.tgl{display:flex;gap:6px}
+.tgl button{flex:1;background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:8px;font-size:12px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:6px;font-family:inherit}
+.tgl button:hover{color:var(--text);border-color:var(--line2)}
+.tgl svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.wrap{margin-left:var(--side);min-height:100vh}
+.topbar{display:none;position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);padding:10px 14px;align-items:center;gap:12px}
+.burger{background:transparent;border:1px solid var(--line);color:var(--text);border-radius:10px;width:38px;height:38px;padding:0;display:grid;place-items:center;cursor:pointer}
+.burger svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.topbar .t{font-weight:600}
+.scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:25}
+main{max-width:1060px;margin:0 auto;padding:34px 34px calc(var(--player) + 48px)}
+.pagehead{margin:0 0 26px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.pagehead h1{margin:0;font-size:40px;line-height:1.05;font-weight:700;letter-spacing:-.035em}
+
+/* ---------- плеер-строка ---------- */
+.player{position:fixed;left:var(--side);right:0;bottom:0;height:var(--player);z-index:20;display:flex;align-items:center;gap:16px;
+  padding:0 26px;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(14px);border-top:1px solid var(--line)}
+.np-tile{width:48px;height:48px;border-radius:10px;background:var(--card2);border:1px solid var(--line2);display:grid;place-items:center;
+  font-weight:700;font-size:18px;flex:none;text-transform:uppercase}
+.np-main{min-width:0;flex:1}
+.np-title{font-weight:600;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.np-sub{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.eq{display:flex;align-items:flex-end;gap:3px;height:22px;flex:none}
+.eq i{display:block;width:3px;background:var(--acc);border-radius:2px;height:30%;animation:eq 1s ease-in-out infinite}
+.eq i:nth-child(2){animation-delay:.18s}.eq i:nth-child(3){animation-delay:.36s}.eq i:nth-child(4){animation-delay:.1s}.eq i:nth-child(5){animation-delay:.28s}
+@keyframes eq{0%,100%{height:25%}50%{height:100%}}
+.player.idle .eq i{animation:none;height:18%;background:var(--line2)}
+.player.idle .np-title{color:var(--muted);font-weight:500}
+
+/* спойлеры настроек — не вылезают за экран */
+details.settings-spoiler{
+  background:var(--card);border:1px solid var(--line);border-radius:16px;
+  margin-bottom:16px;box-shadow:var(--shadow);overflow:hidden;max-width:100%;
+}
+details.settings-spoiler>summary{
+  cursor:pointer;list-style:none;padding:16px 22px;user-select:none;
+  font-size:12px;font-weight:600;font-family:var(--mono);letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:10px;
+}
+details.settings-spoiler>summary::-webkit-details-marker{display:none}
+details.settings-spoiler>summary::before{
+  content:"";width:0;height:0;border-left:5px solid var(--acc);
+  border-top:4px solid transparent;border-bottom:4px solid transparent;
+  transition:transform .15s;flex:none;
+}
+details.settings-spoiler[open]>summary::before{transform:rotate(90deg)}
+details.settings-spoiler[open]>summary{border-bottom:1px solid var(--line);color:var(--text)}
+details.settings-spoiler .settings-body{padding:8px 22px 20px;max-width:100%;box-sizing:border-box}
+details.settings-spoiler .settings-body label{margin-top:12px}
+.dev-row{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.dev-row:last-child{border-bottom:none}
+.dev-art{width:56px;height:56px;border-radius:10px;object-fit:cover;background:var(--card2);border:1px solid var(--line2);flex:none}
+.dev-art-ph{width:56px;height:56px;border-radius:10px;background:var(--card2);border:1px solid var(--line2);
+  display:grid;place-items:center;color:var(--muted);font-size:20px;flex:none}
+.np-tile.has-cover{background-size:cover;background-position:center;color:transparent}
+
+.np-count{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:5px 11px;white-space:nowrap;text-decoration:none}
+.np-count:hover{color:var(--text);border-color:var(--line2)}
+
+/* ---------- карточки и формы ---------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 22px;margin-bottom:16px;box-shadow:var(--shadow);transition:border-color .2s}
+.card:hover{border-color:var(--line2)}
+.card h2{margin:0 0 14px;font-size:12px;font-weight:600;font-family:var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.card h3{font-size:16px;letter-spacing:-.01em}
+label{display:block;margin:14px 0 6px;color:var(--muted);font-size:12.5px;font-weight:500}
+input,select,textarea{width:100%;padding:11px 13px;border-radius:10px;border:1px solid var(--line2);background:var(--bg2);color:var(--text);
+  font-size:14px;font-family:inherit;transition:border-color .15s,box-shadow .15s}
+input::placeholder,textarea::placeholder{color:var(--muted);opacity:.7}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--text);box-shadow:0 0 0 3px var(--acc-soft)}
+input[type=checkbox],input[type=radio]{width:auto;accent-color:var(--acc)}
+textarea{min-height:76px;font-family:var(--mono);font-size:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;align-items:center}
+button,.btn{appearance:none;border:1px solid var(--acc);border-radius:10px;padding:10px 18px;font-size:13.5px;font-weight:600;cursor:pointer;
+  background:var(--acc);color:var(--acc-fg);text-decoration:none;display:inline-block;font-family:inherit;transition:transform .08s,opacity .15s,background .15s}
+button:hover,.btn:hover{opacity:.88}
+button:active,.btn:active{transform:translateY(1px)}
+button:disabled{opacity:.35;cursor:not-allowed}
+button.ghost,.btn.ghost{background:transparent;color:var(--text);border-color:var(--line2)}
+button.ghost:hover,.btn.ghost:hover{background:var(--acc-soft);opacity:1;border-color:var(--muted)}
+button.small,.btn.small{padding:6px 12px;font-size:12.5px;border-radius:8px}
+.muted{color:var(--muted);font-size:13px}
+.badge{white-space:nowrap;flex:none;display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:600;font-family:var(--mono);letter-spacing:.04em}
+.badge.ok{background:var(--acc);color:var(--acc-fg)}
+.badge.off{background:transparent;color:var(--muted);border:1px dashed var(--line2)}
+.flash{background:var(--ok-bg);color:var(--text);border:1px solid var(--line2);border-left:3px solid var(--acc);padding:12px 16px;border-radius:12px;margin-bottom:18px}
+.flash.err{background:var(--err-bg);border-left-style:double;border-left-width:5px}
+.flash.err::before{content:"! ";font-weight:800}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:500}
+td,th{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+code{background:var(--card2);border:1px solid var(--line);padding:1px 7px;border-radius:6px;font-size:12px;font-family:var(--mono)}
+hr{border:0;border-top:1px solid var(--line);margin:18px 0}
+details>summary{cursor:pointer}
+.logs{background:var(--bg2);font-family:var(--mono);font-size:12px;line-height:1.55;padding:14px;border-radius:12px;height:62vh;overflow-y:auto;
+  white-space:pre-wrap;word-break:break-word;color:var(--text2);border:1px solid var(--line)}
+.logs .lvl-ERROR,.logs .lvl-STDERR{color:var(--acc-fg);background:var(--acc);font-weight:700;padding:0 4px;border-radius:3px}
+.logs .lvl-WARNING{color:var(--text);font-weight:600;text-decoration:underline;text-decoration-style:dotted}
+.logs .lvl-INFO{color:var(--text2)}
+.logs .lvl-DEBUG{color:var(--muted)}
+.logs .lvl-STDOUT{color:var(--text2)}
+.logs .ts{color:var(--muted);margin-right:6px}
+.logs .name{color:var(--text);opacity:.65}
+.logs-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.search-card{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:10px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;transition:border-color .15s,background .15s}
+.search-card:hover{border-color:var(--line2);background:var(--card2)}
+.search-card .name{font-weight:600;color:var(--text)}
+.search-card .desc{color:var(--muted);font-size:13px}
+.search-card .actions{margin-left:auto;display:flex;gap:8px}
+img{filter:grayscale(1);border-radius:6px}
+main{filter:grayscale(1)}
+
+
+/* ---------- статус ---------- */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;min-width:0;transition:border-color .2s}
+.stat:hover{border-color:var(--line2)}
+.stat-k{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.stat-v{font-size:26px;font-weight:700;letter-spacing:-.03em;margin:8px 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat-s{font-size:12.5px;color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.tile{position:relative;background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:15px 16px 14px;min-height:112px;transition:border-color .15s,transform .15s,background .15s}
+.tile:hover{border-color:var(--text);background:var(--card2);transform:translateY(-2px)}
+.tile-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.tile-name{font-weight:600;font-size:15px;letter-spacing:-.01em}
+.tile-meta{margin-top:12px;font-size:12.5px;color:var(--muted);line-height:1.55}
+.tile-meta b{color:var(--text)}
+.tile-meta code{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px;direction:rtl;text-align:left}
+.tile-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tile-go{position:absolute;right:14px;bottom:12px;text-decoration:none;font-size:18px;color:var(--muted);transition:transform .15s,color .15s}
+.tile:hover .tile-go{color:var(--text);transform:translateX(3px)}
+@media (max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.stat-v{font-size:21px}}
+
+/* ---------- адаптив ---------- */
+@media (max-width:900px){
+  .side{transform:translateX(-100%);box-shadow:var(--shadow)}
+  body.nav-open .side{transform:none}
+  body.nav-open .scrim{display:block}
+  .wrap{margin-left:0}
+  .topbar{display:flex}
+  .player{left:0;padding:0 14px;gap:12px}
+  main{padding:22px 14px calc(var(--player) + 36px)}
+  .pagehead h1{font-size:30px}
+  .np-count{display:none}
+}
+"""
+
+_ICONS = {
+    "status": '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+    "current": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    "radio": '<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 010 8.4M7.8 16.2a6 6 0 010-8.4M19 5a10 10 0 010 14M5 19A10 10 0 015 5"/>',
+    "search": '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+    "favorites": '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+    "settings": '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+    "logs": '<path d="M4 17l6-5-6-5M12 19h8"/>',
+}
+
+_NAV = [
+    ("Обзор", [("status", "/", "Статус")]),
+    ("Музыка", [
+        ("search", "/search", "Поиск"),
+        ("radio", "/radio", "Радио"),
+        ("favorites", "/favorites", "Избранное"),
+        ("current", "/current", "Текущие плейлисты"),
+    ]),
+    ("Система", [("settings", "/settings", "Настройки"), ("logs", "/logs", "Консоль")]),
+]
+
+_EYEBROW = {
+    "status": "Обзор", "settings": "Конфигурация", "radio": "Источники", "search": "Источники",
+    "favorites": "Библиотека", "current": "Библиотека", "logs": "Система",
+}
+
+_PAGE_JS = """
+(function(){
+  var b=document.body;
+  function $(i){return document.getElementById(i);}
+  var burger=$('burger'),scrim=$('scrim');
+  if(burger)burger.onclick=function(){b.classList.toggle('nav-open');};
+  if(scrim)scrim.onclick=function(){b.classList.remove('nav-open');};
+  function theme(t){
+    document.documentElement.setAttribute('data-theme',t);
+    try{localStorage.setItem('dlna-theme',t);}catch(e){}
+  }
+  var d=$('th-dark'),l=$('th-light');
+  if(d)d.onclick=function(){theme('dark');};
+  if(l)l.onclick=function(){theme('light');};
+  var np=$('np'),tile=$('np-tile'),ttl=$('np-title'),sub=$('np-sub'),cnt=$('np-count');
+  function ago(s){s=Math.max(0,Math.round(s));return s<60?s+' с назад':Math.floor(s/60)+' мин назад';}
+  function tick(){
+    fetch('/api/now',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
+      var c=(j&&j.clients)||[];
+      if(!c.length){
+        np.classList.add('idle');tile.textContent='–';tile.classList.remove('has-cover');
+        tile.style.backgroundImage='';ttl.textContent='Ничего не играет';
+        sub.textContent='ожидание запросов от ресивера';cnt.textContent='0 устройств';return;
+      }
+      var x=c[0];np.classList.remove('idle');
+      if(x.cover){
+        tile.textContent='';tile.classList.add('has-cover');
+        tile.style.backgroundImage='url("'+x.cover+'")';
+      } else {
+        tile.classList.remove('has-cover');tile.style.backgroundImage='';
+        tile.textContent=(x.service||'?').charAt(0);
+      }
+      ttl.textContent=x.title||'—';
+      sub.textContent=(x.service||'?')+' · '+(x.ip||'?')+' · '+ago(j.now-x.ts);
+      cnt.textContent=c.length+(c.length===1?' устройство':' устройств(а)');
+    }).catch(function(){});
+  }
+  if(np){tick();setInterval(tick,4000);}
+})();
+"""
+
+
+def _svg(name: str) -> str:
+    return (
+        '<svg viewBox="0 0 24 24" aria-hidden="true">' + _ICONS.get(name, "") + "</svg>"
+    )
+
 
 def _page(title: str, body: str, flash: str = "", active: str = "") -> bytes:
     if flash:
@@ -173,77 +455,69 @@ def _page(title: str, body: str, flash: str = "", active: str = "") -> bytes:
     else:
         flash_html = ""
 
-    def cls(name: str) -> str:
-        return ' class="active"' if active == name else ""
+    nav_html = []
+    for grp, items in _NAV:
+        nav_html.append(f'<div class="navgrp">{html.escape(grp)}</div>')
+        for key, href, label in items:
+            on = " active" if active == key else ""
+            nav_html.append(f'<a class="nav{on}" href="{href}">{_svg(key)}<span>{html.escape(label)}</span></a>')
+    nav_s = "".join(nav_html)
+
+    try:
+        cfg = _cfg()
+        srv_cfg = cfg.get("server") or {}
+        announce = _STATE.get("announce_ip") or srv_cfg.get("announce_ip") or ""
+        dlna_port = srv_cfg.get("port") or 8200
+        srv_name = srv_cfg.get("name") or "DLNA-emu"
+    except Exception:
+        announce, dlna_port, srv_name = "", 8200, "DLNA-emu"
+    srv_addr = f"{announce}:{dlna_port}" if announce else f":{dlna_port}"
+    eyebrow = _EYEBROW.get(active, "DLNA-emu")
 
     doc = f"""<!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>{html.escape(title)} — DLNA-emu</title>
-<style>
-  :root {{ --bg:#0f1419; --card:#1a2332; --text:#e7ecf3; --muted:#8b9bb4; --acc:#3d8bfd; --ok:#3dd68c; --err:#f07178; --warn:#f0c36a; }}
-  * {{ box-sizing:border-box; }}
-  body {{ margin:0; font-family:system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); line-height:1.45; }}
-  header {{ background:var(--card); padding:14px 18px; border-bottom:1px solid #243044; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }}
-  header h1 {{ margin:0; font-size:18px; font-weight:600; }}
-  header nav {{ display:flex; gap:18px; align-items:center; }}
-  header nav a {{ color:var(--muted); text-decoration:none; font-size:14px; padding:4px 0; border-bottom:2px solid transparent; }}
-  header nav a:hover {{ color:var(--text); }}
-  header nav a.active {{ color:var(--acc); border-bottom-color:var(--acc); }}
-  .console-btn {{ margin-left:auto; background:linear-gradient(135deg,#3d8bfd,#2563eb); color:#fff !important; padding:9px 18px; border-radius:8px; font-size:14px; font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(61,139,253,.35); }}
-  main {{ max-width:960px; margin:0 auto; padding:18px 14px 40px; }}
-  .card {{ background:var(--card); border-radius:12px; padding:16px 18px; margin-bottom:14px; border:1px solid #243044; }}
-  .card h2 {{ margin:0 0 12px; font-size:16px; }}
-  label {{ display:block; margin:10px 0 4px; color:var(--muted); font-size:13px; }}
-  input, select, textarea {{ width:100%; padding:10px 12px; border-radius:8px; border:1px solid #2d3a4f; background:#0d121a; color:var(--text); font-size:14px; }}
-  textarea {{ min-height:72px; font-family:ui-monospace,monospace; font-size:12px; }}
-  .row {{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; align-items:center; }}
-  button, .btn {{ appearance:none; border:0; border-radius:8px; padding:10px 16px; font-size:14px; cursor:pointer; background:var(--acc); color:#fff; text-decoration:none; display:inline-block; font-family:inherit; }}
-  button.ghost, .btn.ghost {{ background:#243044; color:var(--text); }}
-  button.small {{ padding:6px 12px; font-size:13px; }}
-  .muted {{ color:var(--muted); font-size:13px; }}
-  .badge {{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; }}
-  .badge.ok {{ background:#1a3d2e; color:var(--ok); }}
-  .badge.off {{ background:#3a2a2a; color:var(--err); }}
-  .flash {{ background:#1a3d2e; color:var(--ok); padding:10px 14px; border-radius:8px; margin-bottom:14px; }}
-  .flash.err {{ background:#3a2a2a; color:var(--err); }}
-  table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-  td, th {{ text-align:left; padding:6px 4px; border-bottom:1px solid #243044; }}
-  code {{ background:#0d121a; padding:1px 6px; border-radius:4px; font-size:12px; }}
-  .logs {{ background:#0d121a; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; line-height:1.5; padding:12px; border-radius:8px; height:65vh; overflow-y:auto; white-space:pre-wrap; word-break:break-word; color:#c8d3e0; border:1px solid #243044; }}
-  .logs .lvl-ERROR, .logs .lvl-STDERR {{ color: #f07178; }}
-  .logs .lvl-WARNING {{ color: #f0c36a; }}
-  .logs .lvl-INFO {{ color: #a8d8ff; }}
-  .logs .lvl-DEBUG {{ color: #8b9bb4; }}
-  .logs .lvl-STDOUT {{ color: #c8d3e0; }}
-  .logs .ts {{ color: #6b7c93; margin-right:6px; }}
-  .logs .name {{ color: #7a95c9; }}
-  .logs-toolbar {{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }}
-  .search-card {{ background:#0d121a; border:1px solid #243044; border-radius:8px; padding:12px 14px; margin-bottom:10px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }}
-  .search-card .name {{ font-weight:600; color:var(--text); }}
-  .search-card .desc {{ color:var(--muted); font-size:13px; }}
-  .search-card .actions {{ margin-left:auto; display:flex; gap:8px; }}
-</style>
+<script>{_THEME_BOOT}</script>
+<style>{_CSS}</style>
 </head>
 <body>
-<header>
-  <h1>DLNA-emu</h1>
-  <nav>
-    <a href="/"{cls("status")}>Статус</a>
-    <a href="/settings"{cls("settings")}>Настройки</a>
-    <a href="/radio"{cls("radio")}>Радио</a>
-    <a href="/search"{cls("search")}>🔍 Поиск</a>
-    <a href="/favorites"{cls("favorites")}>⭐ Избранное</a>
-    <a href="/current"{cls("current")}>🕘 Текущие плейлисты</a>
-  </nav>
-  <a href="/logs" class="console-btn">⌨ Консоль</a>
-</header>
-<main>
-{flash_html}
-{body}
-</main>
+<aside class="side" id="side">
+  <div class="brand">
+    <div class="mark"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="10" width="3.2" height="4" rx="1.6"/><rect x="8.2" y="6" width="3.2" height="12" rx="1.6"/><rect x="13.4" y="3" width="3.2" height="18" rx="1.6"/><rect x="18.6" y="8" width="2.4" height="8" rx="1.2"/></svg></div>
+    <div><div class="bname">DLNA·emu</div><div class="bsub">media server</div></div>
+  </div>
+  <nav>{nav_s}</nav>
+  <div class="side-foot">
+    <div class="srv"><i class="dot"></i><div><b>{html.escape(str(srv_name))}</b><span>{html.escape(srv_addr)}</span></div></div>
+    <div class="tgl">
+      <button type="button" class="ghost" id="th-dark" title="Тёмная тема"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg>Тёмная</button>
+      <button type="button" class="ghost" id="th-light" title="Светлая тема"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Светлая</button>
+    </div>
+  </div>
+</aside>
+<div class="scrim" id="scrim"></div>
+<div class="wrap">
+  <header class="topbar">
+    <button type="button" class="burger" id="burger" aria-label="Меню"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    <span class="t">{html.escape(title)}</span>
+  </header>
+  <main>
+    <div class="pagehead"><div class="eyebrow">{html.escape(eyebrow)}</div><h1>{html.escape(title)}</h1></div>
+    {flash_html}
+    {body}
+  </main>
+</div>
+<footer class="player idle" id="np">
+  <div class="np-tile" id="np-tile">–</div>
+  <div class="np-main"><div class="np-title" id="np-title">Ничего не играет</div><div class="np-sub" id="np-sub">ожидание запросов от ресивера</div></div>
+  <div class="eq"><i></i><i></i><i></i><i></i><i></i></div>
+  <a class="np-count" id="np-count" href="/">0 устройств</a>
+</footer>
+<script>{_PAGE_JS}</script>
 </body>
 </html>"""
     return doc.encode("utf-8")
@@ -321,6 +595,25 @@ def _restarting_body(port: int) -> str:
 #  Страницы
 # ============================================================
 
+def _dlna_cover_url(rel: str) -> str:
+    """Префикс обложки хостом DLNA-порта (веб и DLNA могут быть на разных портах)."""
+    if not rel:
+        return ""
+    if rel.startswith("http://") or rel.startswith("https://"):
+        return rel
+    try:
+        from .server import detect_lan_ip
+        cfg = _cfg()
+        srv = cfg.get("server") or {}
+        host = detect_lan_ip(srv.get("announce_ip"))
+        port = int(srv.get("port") or 8200)
+        if not rel.startswith("/"):
+            rel = "/" + rel
+        return f"http://{host}:{port}{rel}"
+    except Exception:
+        return rel
+
+
 def _devices_card() -> str:
     try:
         from .server import get_active_clients
@@ -331,35 +624,55 @@ def _devices_card() -> str:
         return """
 <div class="card">
   <h2>Устройства онлайн</h2>
-  <p class="muted">Сейчас никто не слушает (или активность старше 5 мин).</p>
+  <p class="muted">Сейчас никто не слушает. Пока идёт длинный трек, устройство остаётся online (keepalive 30 с).</p>
 </div>
 """
     rows = []
     for c in clients:
         ip = html.escape(str(c.get("ip") or "?"))
-        svc = html.escape(str(c.get("service") or "?"))
+        svc_raw = str(c.get("service") or "?")
+        svc_labels = {
+            "usb": "USB / файлы",
+            "local": "Локальный файл",
+            "net": "Сетевое хранилище",
+            "file": "USB / файлы",
+            "yandex": "Яндекс.Музыка",
+            "kion": "КИОН Музыка",
+            "zvuk": "Звук",
+            "deezer": "Deezer",
+            "radio": "Радио",
+            "drivemusic": "DriveMusic",
+            "promodj": "PromoDJ",
+            "zaycev": "Zaycev.net",
+            "akniga": "akniga.org",
+        }
+        svc = html.escape(svc_labels.get(svc_raw, svc_raw))
         title = html.escape(str(c.get("title") or "?"))
+        cover = _dlna_cover_url(str(c.get("cover") or ""))
         ts = c.get("ts") or 0
         ago = int(time.time() - ts)
-        if ago < 60:
-            ago_s = f"{ago} сек. назад"
+        ago_s = f"{ago} сек. назад" if ago < 60 else f"{ago // 60} мин. назад"
+        st = "▶" if c.get("streaming") else ""
+        if cover:
+            art = (
+                f'<img class="dev-art" src="{html.escape(cover)}" alt="" loading="lazy" '
+                f'onerror="this.outerHTML=\'<div class=dev-art-ph>♪</div>\'">'
+            )
         else:
-            ago_s = f"{ago // 60} мин. назад"
+            art = '<div class="dev-art-ph">♪</div>'
         rows.append(
-            f"<tr><td><code>{ip}</code></td>"
-            f"<td>{svc}</td>"
-            f"<td>{title}</td>"
-            f"<td class='muted'>{ago_s}</td></tr>"
+            f'<div class="dev-row">{art}'
+            f'<div style="min-width:0;flex:1">'
+            f'<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{title}</div>'
+            f'<div class="muted" style="font-size:12.5px;margin-top:2px">'
+            f'<code>{ip}</code> · {svc} {st} · {ago_s}</div>'
+            f'</div></div>'
         )
-    table = (
-        "<table><tr><th>IP (LAN)</th><th>Площадка</th><th>Сейчас играет</th><th></th></tr>"
-        + "".join(rows) + "</table>"
-    )
     return f"""
 <div class="card">
   <h2>Устройства онлайн</h2>
-  <p class="muted">Клиенты, которые недавно запрашивали поток (до 5 мин.).</p>
-  {table}
+  <p class="muted">Пока ресивер слушает поток, он остаётся в списке (обновление каждые 30 с).</p>
+  {''.join(rows)}
 </div>
 """
 
@@ -472,27 +785,52 @@ def _status_body() -> str:
             err = html.escape(str(getattr(ssdp, "last_error", "") or "не OK"))
             ssdp_line = f'<p>SSDP: <span class="badge off">проблема</span> <span class="muted">{err}</span></p>'
     desc_url = f"http://{announce}:{dlna_port}/description.xml"
+    radio_dir = str(getattr(radio_lib, "folder", "") or radio.get("folder") or "")
+    srv_name = html.escape(str(server.get("name") or "DLNA-emu"))
+    ssdp_ok = ssdp is not None and getattr(ssdp, "ok", False)
+    ssdp_html = (
+        '<span class="badge ok">OK</span>' if ssdp_ok else
+        ('<span class="badge off">проблема</span>' if ssdp is not None else '<span class="badge off">—</span>')
+    )
+    ssdp_err = ""
+    if ssdp is not None and not ssdp_ok:
+        ssdp_err = f'<div class="muted" style="margin-top:6px">{html.escape(str(getattr(ssdp, "last_error", "") or "не OK"))}</div>'
+
+    def _tile(name, badge, extra, meta, site=""):
+        link = (f'<a class="tile-go" href="/search?site={site}" title="Поиск">→</a>' if site else "")
+        return (
+            f'<div class="tile"><div class="tile-top"><span class="tile-name">{name}</span>{badge}</div>'
+            f'{("<div class=tile-meta style=margin-top:6px>" + extra.replace(" · ", "", 1) + "</div>") if extra else ""}<div class="tile-meta">{meta}</div>{link}</div>'
+        )
+
+    tiles = "".join([
+        _tile("Radio", '<span class="badge ok">M3U</span>', "",
+              f'плейлистов: <b>{n_pl}</b><br><code title="{html.escape(radio_dir)}">{html.escape(radio_dir or "—")}</code>'),
+        _tile("Deezer", dz_badge, _acc_names("deezer"), f'сохранённых: <b>{n_saved}</b>', "deezer"),
+        _tile("Яндекс.Музыка", ya_badge, _acc_names("yandex"), f'сохранённых: <b>{n_ya_saved}</b>', "yandex"),
+        _tile("Звук", zv_badge, _acc_names("zvuk"), f'сохранённых: <b>{n_zv_saved}</b>', "zvuk"),
+        _tile("КИОН", kion_badge, _acc_names("kion"), f'сохранённых: <b>{n_kion_saved}</b>', "kion"),
+        _tile("DriveMusic", dm_badge, "", f'сохранённых: <b>{n_dm_saved}</b>', "drivemusic"),
+        _tile("Zaycev.net", zy_badge, "", f'сохранённых: <b>{n_zy_saved}</b>', "zaycev"),
+        _tile("PromoDJ", pdj_badge, "", "каталог миксов и треков", "promodj"),
+        _tile("akniga.org", ak_badge, "", f'книги: <b>{n_ak_saved}</b> · избранное: <b>{n_ak_fav}</b>/500'),
+    ])
     return f"""
+<div class="stats">
+  <div class="stat"><div class="stat-k">DLNA-сервер</div><div class="stat-v">{srv_name}</div>
+    <div class="stat-s"><code>{html.escape(str(announce))}:{dlna_port}</code></div></div>
+  <div class="stat"><div class="stat-k">Веб-панель</div><div class="stat-v">:{web_port}</div>
+    <div class="stat-s"><a href="{html.escape(desc_url)}">description.xml</a></div></div>
+  <div class="stat"><div class="stat-k">SSDP</div><div class="stat-v">{ssdp_html}</div>
+    <div class="stat-s">анонс в сети{ssdp_err}</div></div>
+  <div class="stat"><div class="stat-k">Радио</div><div class="stat-v">{n_pl}</div>
+    <div class="stat-s">плейлистов M3U</div></div>
+</div>
 <div class="card">
-  <h2>Сервер</h2>
-  <p>Имя в DLNA: <strong>{html.escape(str(server.get("name") or "DLNA-emu"))}</strong></p>
-  <p class="muted">DLNA: <code>http://{html.escape(str(announce))}:{dlna_port}</code>
-     · веб: <code>http://{html.escape(str(announce))}:{web_port}</code></p>
-  <p class="muted">Проверка: <a href="{html.escape(desc_url)}" style="color:#3d8bfd">{html.escape(desc_url)}</a></p>
-  {ssdp_line}
-  <p>Радио-плейлистов: <strong>{n_pl}</strong> · папка <code>{html.escape(str(radio.get("folder") or ""))}</code></p>
-  <p>Deezer: {dz_badge}{_acc_names("deezer")} · сохранённых: <strong>{n_saved}</strong></p>
-  <p>DriveMusic: {dm_badge} · сохранённых: <strong>{n_dm_saved}</strong></p>
-  <p>akniga.org: {ak_badge} · мои книги: <strong>{n_ak_saved}</strong> · избранное: <strong>{n_ak_fav}</strong> / 500</p>
-  <p>Яндекс.Музыка: {ya_badge}{_acc_names("yandex")} · сохранённых: <strong>{n_ya_saved}</strong></p>
-  <p>КИОН: {kion_badge}{_acc_names("kion")} · сохранённых: <strong>{n_kion_saved}</strong> · <a href="/search?site=kion" style="color:#3d8bfd">поиск</a></p>
-  <p>Звук: {zv_badge}{_acc_names("zvuk")} · сохранённых: <strong>{n_zv_saved}</strong> · <a href="/search?site=zvuk" style="color:#3d8bfd">поиск</a></p>
-  <p>PromoDJ: {pdj_badge} · <a href="/search?site=promodj" style="color:#3d8bfd">поиск</a></p>
-  <p>Zaycev.net: {zy_badge} · сохранённых: <strong>{n_zy_saved}</strong> · <a href="/search?site=zaycev" style="color:#3d8bfd">поиск</a></p>
+  <h2>Источники</h2>
+  <div class="tiles">{tiles}</div>
   <div class="row">
-    <a class="btn" href="/search">🔍 Поиск</a>
-    <a class="btn ghost" href="/logs">⌨ Консоль</a>
-    <a class="btn ghost" href="/logs/download">⬇ Скачать лог</a>
+    <a class="btn" href="/search">Поиск</a>
   </div>
 </div>
 {_devices_card()}
@@ -507,7 +845,7 @@ def _status_body() -> str:
   <h2>Служба</h2>
   <p class="muted">Полный перезапуск эмулятора (то же, что stop + start в SSH). Связь с панелью пропадёт на несколько секунд.</p>
   <form method="POST" action="/restart" onsubmit="return confirm('Перезапустить службу DLNA-emu?')" style="margin:10px 0">
-    <button type="submit" class="ghost">🔄 Перезапустить службу</button>
+    <button type="submit" class="ghost">Перезапустить службу</button>
   </form>
 </div>
 """
@@ -534,7 +872,7 @@ def _tokens_widget(field: str, svc: str, tokens, label: str, hint: str = "") -> 
         badge = f'<span class="tkname">{html.escape(nm)}</span>' if nm else ""
         try:
             if pool is not None and pool.tokens == toks and getattr(pool.client(i), "_account_ok", None) is False:
-                badge = '<span class="tkname" style="color:#e5534b">⚠ токен не принят</span>'
+                badge = '<span class="tkname" style="color:var(--text)">⚠ токен не принят</span>'
         except Exception:
             pass
         rows.append(
@@ -559,7 +897,7 @@ _TOKENS_JS = """
 <style>
 .tkrow{display:flex;gap:8px;align-items:center;margin:4px 0}
 .tkrow input.tk{flex:1;font-family:monospace;font-size:12px}
-.tkname{color:#7fd18b;font-size:12px;white-space:nowrap}
+.tkname{color:var(--muted);font-size:12px;white-space:nowrap}
 .tkdel{padding:4px 12px}
 </style>
 <script>
@@ -626,7 +964,7 @@ def _settings_body(flash: str = "") -> str:
         for _st in _ns_mgr.all():
             ns_status += f"<div>✓ <b>{html.escape(_st.name)}</b> — {html.escape(_st.describe())}</div>"
         for _er in _ns_mgr.errors:
-            ns_status += f"<div style=\"color:#e5534b\">✗ {html.escape(_er)}</div>"
+            ns_status += f"<div style=\"color:var(--text)\">✗ {html.escape(_er)}</div>"
 
     from .accounts import join_tokens
     arl = join_tokens(deezer.get("arl"))
@@ -673,9 +1011,10 @@ def _settings_body(flash: str = "") -> str:
     return f"""
 <form method="POST" action="/settings">
 
-<div class="card">
-  <h2>Сервер</h2>
-  <label>Имя DLNA-сервера</label>
+<details class="settings-spoiler">
+  <summary>Сервер</summary>
+  <div class="settings-body">
+<label>Имя DLNA-сервера</label>
   <input name="name" value="{html.escape(str(server.get("name") or "DLNA-emu"))}">
   <label>Адрес прослушивания</label>
   <input name="host" value="{html.escape(str(server.get("host") or "0.0.0.0"))}"
@@ -686,21 +1025,27 @@ def _settings_body(flash: str = "") -> str:
   <label>IP для анонса (LAN IP роутера, пусто — автоопределение)</label>
   <input name="announce_ip" value="{html.escape(str(server.get("announce_ip") or ""))}"
          placeholder="192.168.1.1">
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>Веб-панель</h2>
-  {_chk("web_enabled", "Включить веб-панель",
+
+<details class="settings-spoiler">
+  <summary>Веб-панель</summary>
+  <div class="settings-body">
+{_chk("web_enabled", "Включить веб-панель",
         _b(web.get("enabled"), True),
         "после выключения страница станет недоступна — вернуть только правкой config.yaml")}
   <label>Порт веб-панели</label>
   <input name="web_port" type="number" min="1" max="65535"
          value="{html.escape(str(web.get("port") or 8088))}">
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>Логи и трассировка</h2>
-  <label>Уровень логирования</label>
+
+<details class="settings-spoiler">
+  <summary>Логи и трассировка</summary>
+  <div class="settings-body">
+<label>Уровень логирования</label>
   {_sel("log_level", log_level, [
       ("debug",   "DEBUG — всё, включая тела SOAP/DIDL"),
       ("info",    "INFO — обычный (рекомендуется)"),
@@ -713,11 +1058,14 @@ def _settings_body(flash: str = "") -> str:
   {_chk("trace_covers", "Показывать /cover/* на уровне INFO",
         _b(trace.get("covers"), False),
         "по умолчанию они идут на DEBUG, чтобы не забивать буфер")}
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>Deezer</h2>
-  {_tokens_widget("arl", "deezer", arl, "ARL (аккаунты Deezer)",
+
+<details class="settings-spoiler">
+  <summary>Deezer</summary>
+  <div class="settings-body">
+{_tokens_widget("arl", "deezer", arl, "ARL (аккаунты Deezer)",
       "Cookie <code>arl</code> с deezer.com. Несколько аккаунтов — «＋»; в config.yaml они пишутся через запятую. "
       "Имя аккаунта определяется по ARL.")}
   <label>Качество</label>
@@ -729,11 +1077,14 @@ def _settings_body(flash: str = "") -> str:
   <label>Кэш метаданных, сек</label>
   <input name="deezer_cache_sec" type="number" min="30" max="86400"
          value="{html.escape(str(deezer.get("cache_sec") or 300))}">
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>DriveMusic</h2>
-  {_chk("dm_enabled", "Включить DriveMusic",
+
+<details class="settings-spoiler">
+  <summary>DriveMusic</summary>
+  <div class="settings-body">
+{_chk("dm_enabled", "Включить DriveMusic",
         _b(dm.get("enabled"), True))}
   <label>Кэш, сек</label>
   <input name="dm_cache_sec" type="number" min="30" max="86400"
@@ -741,11 +1092,14 @@ def _settings_body(flash: str = "") -> str:
   <label>Базовый URL (зеркало; пусто = авто-выбор)</label>
   <input name="dm_base_url"
          value="{html.escape(str(dm.get("base_url") or "https://ru.drivemusic.me"))}">
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>akniga.org (аудиокниги)</h2>
-  {_chk("ak_enabled", "Включить akniga.org",
+
+<details class="settings-spoiler">
+  <summary>akniga.org (аудиокниги)</summary>
+  <div class="settings-body">
+{_chk("ak_enabled", "Включить akniga.org",
         _b(ak.get("enabled"), True))}
   <label>Путь к ffmpeg (пусто — искать в $PATH)</label>
   <input name="ak_ffmpeg" value="{html.escape(str(ak.get("ffmpeg") or ""))}"
@@ -759,15 +1113,18 @@ def _settings_body(flash: str = "") -> str:
   <label>Кэш, сек</label>
   <input name="ak_cache_sec" type="number" min="30" max="86400"
          value="{html.escape(str(ak.get("cache_sec") or 600))}">
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>Яндекс.Музыка</h2>
-  {_tokens_widget("yandex_token", "yandex", ya_token, "OAuth-токены (аккаунты Яндекса)")}
+
+<details class="settings-spoiler">
+  <summary>Яндекс.Музыка</summary>
+  <div class="settings-body">
+{_tokens_widget("yandex_token", "yandex", ya_token, "OAuth-токены (аккаунты Яндекса)")}
   <p class="muted" style="margin-top:4px;font-size:12px">
     Получить:
     <a href="https://oauth.yandex.ru/authorize?response_type=token&amp;client_id=23cabbbdc6cd418abb4b39c32c41195d"
-       target="_blank" style="color:#3d8bfd">oauth.yandex.ru</a>
+       target="_blank" style="color:var(--text)">oauth.yandex.ru</a>
     → скопировать access_token из адресной строки после входа.
   </p>
   <label>Качество</label>
@@ -798,17 +1155,20 @@ def _settings_body(flash: str = "") -> str:
   <label>Кэш, сек</label>
   <input name="ya_cache_sec" type="number" min="30" max="86400"
          value="{html.escape(str(ya.get("cache_sec") or 300))}">
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>Звук (zvuk.com)</h2>
-  {_tokens_widget("zvuk_token", "zvuk", zv_token, "X-Auth-Token (аккаунты Звука)")}
+
+<details class="settings-spoiler">
+  <summary>Звук (zvuk.com)</summary>
+  <div class="settings-body">
+{_tokens_widget("zvuk_token", "zvuk", zv_token, "X-Auth-Token (аккаунты Звука)")}
   {_chk("zv_keepalive", "Поддерживать сессию",
         _b(zv.get("keepalive"), False),
         "раз в 40–80 мин (в случайное время) запрашивать профиль, чтобы токен не протухал от простоя")}
   <p class="muted" style="margin-top:4px;font-size:12px">
-    Войти на <a href="https://zvuk.com" target="_blank" style="color:#3d8bfd">zvuk.com</a> →
-    открыть <a href="https://zvuk.com/api/tiny/profile" target="_blank" style="color:#3d8bfd">/api/tiny/profile</a> →
+    Войти на <a href="https://zvuk.com" target="_blank" style="color:var(--text)">zvuk.com</a> →
+    открыть <a href="https://zvuk.com/api/tiny/profile" target="_blank" style="color:var(--text)">/api/tiny/profile</a> →
     скопировать поле <code>token</code>. Нужна подписка для high/flac.
   </p>
   <label>Качество</label>
@@ -829,17 +1189,19 @@ def _settings_body(flash: str = "") -> str:
   <label>Кэш, сек</label>
   <input name="zv_cache_sec" type="number" min="30" max="86400"
          value="{html.escape(str(zv.get("cache_sec") or 300))}">
-</div>
+  </div>
+</details>
 
-<div class="card">
-  
-  <h2>КИОН Музыка (music.mts.ru)</h2>
-  {_tokens_widget("kion_token", "kion", kion.get("token") or "", "OAuth-токены (аккаунты КИОН)")}
+
+<details class="settings-spoiler">
+  <summary>КИОН Музыка (music.mts.ru)</summary>
+  <div class="settings-body">
+{_tokens_widget("kion_token", "kion", kion.get("token") or "", "OAuth-токены (аккаунты КИОН)")}
   <p class="muted" style="margin-top:4px">
-    Войти на <a href="https://music.mts.ru" target="_blank" style="color:#3d8bfd">music.mts.ru</a> /
-    <a href="https://music.kion.ru" target="_blank" style="color:#3d8bfd">music.kion.ru</a> →
+    Войти на <a href="https://music.mts.ru" target="_blank" style="color:var(--text)">music.mts.ru</a> /
+    <a href="https://music.kion.ru" target="_blank" style="color:var(--text)">music.kion.ru</a> →
     DevTools → Network / Local Storage, либо через документацию
-    <a href="https://trudenboy.github.io/ma-provider-kion-music/" target="_blank" style="color:#3d8bfd">ma-provider-kion-music</a>.
+    <a href="https://trudenboy.github.io/ma-provider-kion-music/" target="_blank" style="color:var(--text)">ma-provider-kion-music</a>.
     Нужна подписка для FLAC. API: music.mts.ru/ya_api · Local Storage → ya_token
   </p>
   <label>Качество</label>
@@ -847,11 +1209,14 @@ def _settings_body(flash: str = "") -> str:
       ("flac", "flac (lossless)"),
       ("mp3_320", "mp3_320"),
   ])}
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>PromoDJ</h2>
-  {_chk("pd_enabled", "Включить PromoDJ",
+
+<details class="settings-spoiler">
+  <summary>PromoDJ</summary>
+  <div class="settings-body">
+{_chk("pd_enabled", "Включить PromoDJ",
         _b(pdj.get("enabled"), True))}
   <label>Кэш, сек</label>
   <input name="pd_cache_sec" type="number" min="30" max="86400"
@@ -874,11 +1239,14 @@ def _settings_body(flash: str = "") -> str:
   <p class="muted" style="margin-top:4px;font-size:12px">
     Миксы длиннее лимита идут chunked (без перемотки). Таймаут не даёт ресиверу «зависнуть» на старте.
   </p>
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>Zaycev.net</h2>
-  {_chk("zy_enabled", "Включить Zaycev.net",
+
+<details class="settings-spoiler">
+  <summary>Zaycev.net</summary>
+  <div class="settings-body">
+{_chk("zy_enabled", "Включить Zaycev.net",
         _b(zy.get("enabled"), True))}
   <label>Кэш, сек</label>
   <input name="zy_cache_sec" type="number" min="30" max="86400"
@@ -902,11 +1270,14 @@ def _settings_body(flash: str = "") -> str:
     Без авторизации. Каталоги (жанры, подборки, топ, новинки) подгружаются с сайта по мере
     открытия папок. Исполнители ищутся здесь: вкладка «Поиск» → Zaycev.net → «+ В DLNA».
   </p>
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>USB / файлы</h2>
-  <label>Корни (по одному пути на строку)</label>
+
+<details class="settings-spoiler">
+  <summary>USB / файлы</summary>
+  <div class="settings-body">
+<label>Корни (по одному пути на строку)</label>
   <textarea name="files_roots" rows="3"
             placeholder="/tmp/mnt&#10;/tmp/mnt/6EE7-47CC">{html.escape(roots_text)}</textarea>
   <p class="muted" style="margin-top:4px;font-size:12px">
@@ -921,11 +1292,14 @@ def _settings_body(flash: str = "") -> str:
     <code>D:/music/playlists</code> в Windows. Это музыка с USB (на ресивере «Плейлисты (USB)»), не радио.
     Применяется сразу, без перезапуска.
   </p>
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>Сетевые хранилища (WebDAV / FTP)</h2>
-  <label>network_storages — список в формате YAML</label>
+
+<details class="settings-spoiler">
+  <summary>Сетевые хранилища (WebDAV / FTP)</summary>
+  <div class="settings-body">
+<label>network_storages — список в формате YAML</label>
   <textarea name="netstorage_yaml" rows="14" spellcheck="false"
             style="font-family:monospace;font-size:12px"
             placeholder="- name: Мой NAS&#10;  type: webdav&#10;  url: https://nas.local:5006/music&#10;  user: me&#10;  password: secret&#10;&#10;- name: FTP&#10;  type: ftp или ftps&#10;  host: 192.168.1.50&#10;  port: 21&#10;  path: /music&#10;  user: me&#10;  password: secret">{html.escape(ns_text)}</textarea>
@@ -941,11 +1315,14 @@ def _settings_body(flash: str = "") -> str:
     <code>enabled: false</code>. Аудио идёт напрямую с хранилища. Применяется сразу, без перезапуска.
   </p>
   <div style="font-size:12px;margin-top:6px">{ns_status}</div>
-</div>
+  </div>
+</details>
 
-<div class="card">
-  <h2>Обложки</h2>
-  {_chk("covers_radio", "Обложки для радиостанций",
+
+<details class="settings-spoiler">
+  <summary>Обложки</summary>
+  <div class="settings-body">
+{_chk("covers_radio", "Обложки для радиостанций",
         _b(covers.get("radio"), True),
         "логотип из m3u (tvg-logo) или значок с инициалами")}
   {_chk("covers_radio_nowplaying", "Радио: обложка играющего трека",
@@ -965,7 +1342,9 @@ def _settings_body(flash: str = "") -> str:
   <label>Записей в кэше</label>
   <input name="covers_cache_items" type="number" min="4" max="512"
          value="{html.escape(str(covers.get("cache_items") or 48))}">
-</div>
+  </div>
+</details>
+
 
 <div class="card">
   <div class="row" style="justify-content:flex-start;gap:10px">
@@ -1083,7 +1462,7 @@ def _radio_body(flash: str = "", view_pid: str = "") -> str:
             stations_block = f"""
 <div class="card">
   <h2>Станции: {html.escape(pl.title)}
-    <span style="font-size:12px;background:#1a3d2e;color:#3dd68c;padding:2px 8px;border-radius:6px;margin-left:8px">v3-num</span>
+    <span style="font-size:12px;background:var(--ok-bg);color:var(--text);padding:2px 8px;border-radius:6px;margin-left:8px">v3-num</span>
   </h2>
   <p class="muted"><code>{html.escape(pl.path)}</code>
      · <a href="/radio" style="color:var(--acc)">← все плейлисты</a></p>
@@ -1182,7 +1561,7 @@ def _radio_body(flash: str = "", view_pid: str = "") -> str:
     pop_chk = " checked" if pop_on else ""
     pop_dis = "" if proxy_on else " disabled"
     pop_warn = "" if proxy_on else (
-        '<p style="color:#f0a040;font-size:13px;margin:8px 0 0">⚠ Проксирование радио выключено — '
+        '<p style="color:var(--warn);font-size:13px;margin:8px 0 0">⚠ Проксирование радио выключено — '
         'эмулятор не видит, сколько вы слушаете станцию, поэтому «Ваше популярное радио» отключено. '
         'Включите проксирование выше, после этого можно будет поставить галку.</p>'
     )
@@ -1372,7 +1751,7 @@ def _dmsearch_body(flash: str = "", q: str = "") -> str:
   <p class="muted">Ищет артистов (карточки) · без авторизации · ru.drivemusic.me</p>
   <form method="GET" action="/dmsearch" class="row" style="gap:8px;flex-wrap:wrap">
     <input type="text" name="q" value="{html.escape(q)}" placeholder="имя исполнителя, напр. The Beatles"
-           style="flex:1;min-width:200px;padding:8px 12px;border-radius:8px;border:1px solid #333;background:#1a1a1a;color:#eee">
+           style="flex:1;min-width:200px;padding:8px 12px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--text)">
     <button type="submit">Искать</button>
   </form>
   {results_html}
@@ -1844,7 +2223,7 @@ def _search_body(flash: str = "", q: str = "", site: str = "deezer", page: int =
 </div>
 <div class="card">
   <h2>⭐ Избранное · akniga.org</h2>
-  <p class="muted">Полное управление — на вкладке <a href="/favorites" style="color:#3d8bfd">⭐ Избранное</a>. Сохраняется в <code>akniga_favorites.json</code> (до 500). На ресивере: <strong>akniga.org (аудиокниги) → ⭐ Избранное</strong>.</p>
+  <p class="muted">Полное управление — на вкладке <a href="/favorites" style="color:var(--text)">⭐ Избранное</a>. Сохраняется в <code>akniga_favorites.json</code> (до 500). На ресивере: <strong>akniga.org (аудиокниги) → ⭐ Избранное</strong>.</p>
   {fav_html}
 </div>
 """
@@ -2019,7 +2398,7 @@ def _current_body(open_svcs=None) -> str:
     if undo_n:
         undo = (
             '<form method="POST" action="/current/undo" style="margin:0 0 12px;padding:10px 12px;'
-            'border:1px solid #2d3a4f;border-radius:8px;display:flex;align-items:center;gap:12px;'
+            'border:1px solid var(--line2);border-radius:8px;display:flex;align-items:center;gap:12px;'
             'flex-wrap:wrap">'
             f'<span style="font-size:13px">Последнее удаление: плейлистов — <b>{undo_n}</b>.</span>'
             '<button type="submit" class="ghost small">↩ Вернуть удалённые</button></form>'
@@ -2038,7 +2417,7 @@ def _current_body(open_svcs=None) -> str:
            'когда вы включаете из него трек на устройстве.</p>')
         + '</form>'
         '<style>'
-        'details.svc{border-top:1px solid #243044}'
+        'details.svc{border-top:1px solid var(--line)}'
         'details.svc>summary{cursor:pointer;padding:12px 4px;font-weight:600;list-style:none}'
         'details.svc>summary::-webkit-details-marker{display:none}'
         'details.svc>summary::before{content:"▸";display:inline-block;width:18px;color:var(--muted)}'
@@ -2140,7 +2519,7 @@ def _favorites_body(flash: str = "") -> str:
     if not rows:
         list_html = (
             '<p class="muted">Пока пусто. Найди книгу на вкладке '
-            '<a href="/search?site=akniga" style="color:#3d8bfd">🔍 Поиск</a> '
+            '<a href="/search?site=akniga" style="color:var(--text)">🔍 Поиск</a> '
             'и нажми «⭐ В избранное».</p>'
         )
     else:
@@ -2303,6 +2682,18 @@ class WebUIHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         qs = parse_qs(urlparse(self.path).query)
 
+        if path == "/api/now":
+            try:
+                from .server import get_active_clients
+                clients = get_active_clients()
+            except Exception:
+                clients = []
+            for c in clients:
+                cov = c.get("cover") or ""
+                if cov and not cov.startswith("http"):
+                    c["cover"] = _dlna_cover_url(cov)
+            self._send_json({"now": time.time(), "clients": clients})
+            return
         if path in ("/", "/status"):
             self._send_html(_page("Статус", _status_body(), active="status"))
             return

@@ -34,10 +34,12 @@ trace_log = logging.getLogger("dlna_emu.trace")
 # при старте и на лету из webui при сохранении настроек).
 _TRACE_CFG = {"enabled": True, "covers": False}
 
-# IP устройства -> {service, track, ts, title}
+# IP устройства -> {service, track, ts, title, cover, streaming}
 ACTIVE_CLIENTS: dict = {}
 _ACTIVE_LOCK = __import__("threading").Lock()
-_ACTIVE_TTL = 300  # сек — считать онлайн
+_ACTIVE_TTL = 300  # сек без активного потока
+_KEEPALIVE_INTERVAL = 30
+_KEEPALIVE_STARTED = False
 
 
 # Какую радиостанцию слушает каждый ресивер: ip -> (pid, index, ts).
@@ -47,6 +49,30 @@ RADIO_PLAYING: dict = {}
 # Обложки, пришедшие сразу после этого, — для списка станций (ждать название трека не нужно).
 RADIO_LIST_BROWSED: dict = {}
 _RADIO_PLAYING_TTL = 12 * 3600
+
+
+def _cover_for(service: str, track_id: str) -> str:
+    """Относительный /cover/... путь на DLNA-порту."""
+    if not service or not track_id:
+        return ""
+    svc = service.lower()
+    tid = str(track_id)
+    if svc == "radio":
+        parts = tid.split(":")
+        if len(parts) >= 3:
+            return f"/cover/radio/{parts[1]}/{parts[2]}"
+        return ""
+    if svc in ("yandex", "kion", "zvuk", "deezer", "drivemusic", "promodj", "zaycev"):
+        return f"/cover/{svc}/{tid}"
+    if svc == "akniga":
+        return f"/cover/akniga/{tid.split(':')[0]}"
+    if svc in ("file", "local", "usb"):
+        # track_id = относительный/полный путь — обложка через /cover/file|local/
+        kind = "file" if svc in ("file", "usb") else "local"
+        return f"/cover/{kind}/{tid}"
+    if svc == "net":
+        return ""  # net covers через /cover/file не всегда есть
+    return ""
 
 
 def radio_is_playing(pid: str, index: int) -> bool:
@@ -60,26 +86,70 @@ def radio_is_playing(pid: str, index: int) -> bool:
     return False
 
 
-def update_active_client(ip: str, service: str, title: str, track_id: str = "") -> None:
+def update_active_client(ip: str, service: str, title: str, track_id: str = "",
+                         cover: str = "", streaming: bool = True) -> None:
     if not ip:
         return
     if service != "radio":
         with _ACTIVE_LOCK:
             RADIO_PLAYING.pop(ip, None)
+    cov = cover or _cover_for(service, track_id)
     with _ACTIVE_LOCK:
+        prev = ACTIVE_CLIENTS.get(ip) or {}
         ACTIVE_CLIENTS[ip] = {
             "service": service,
             "title": title or track_id or "?",
             "track_id": track_id,
+            "cover": cov or prev.get("cover") or "",
+            "streaming": bool(streaming),
             "ts": time.time(),
         }
+    _ensure_keepalive()
+
+
+def end_active_stream(ip: str) -> None:
+    if not ip:
+        return
+    with _ACTIVE_LOCK:
+        info = ACTIVE_CLIENTS.get(ip)
+        if info:
+            info["streaming"] = False
+            info["ts"] = time.time()
+
+
+def _keepalive_loop() -> None:
+    while True:
+        try:
+            time.sleep(_KEEPALIVE_INTERVAL)
+            now = time.time()
+            with _ACTIVE_LOCK:
+                for ip, info in list(ACTIVE_CLIENTS.items()):
+                    if info.get("streaming"):
+                        info["ts"] = now
+                    elif now - info.get("ts", 0) > _ACTIVE_TTL:
+                        del ACTIVE_CLIENTS[ip]
+        except Exception:
+            pass
+
+
+def _ensure_keepalive() -> None:
+    global _KEEPALIVE_STARTED
+    if _KEEPALIVE_STARTED:
+        return
+    _KEEPALIVE_STARTED = True
+    th = __import__("threading").Thread(
+        target=_keepalive_loop, name="client-keepalive", daemon=True
+    )
+    th.start()
 
 
 def get_active_clients() -> list:
     now = time.time()
     with _ACTIVE_LOCK:
-        # подчистить устаревшие
-        dead = [k for k, v in ACTIVE_CLIENTS.items() if now - v.get("ts", 0) > _ACTIVE_TTL]
+        dead = [
+            k for k, v in ACTIVE_CLIENTS.items()
+            if (not v.get("streaming")) and (now - v.get("ts", 0) > _ACTIVE_TTL)
+        ]
         for k in dead:
             del ACTIVE_CLIENTS[k]
         return [
@@ -260,6 +330,19 @@ class DLNAHandler(BaseHTTPRequestHandler):
         self.do_GET(head_only=True)
 
     def do_GET(self, head_only: bool = False):
+        path = urlparse(self.path).path
+        client_ip = self.client_address[0] if self.client_address else ""
+        is_stream = (not head_only) and path.startswith("/stream/")
+        try:
+            return self._do_GET_impl(head_only=head_only)
+        finally:
+            if is_stream and client_ip:
+                try:
+                    end_active_stream(client_ip)
+                except Exception:
+                    pass
+
+    def _do_GET_impl(self, head_only: bool = False):
         path = urlparse(self.path).path
         self._trace("HEAD" if head_only else "GET",
                     cover=path.startswith("/cover/"))
@@ -1605,6 +1688,14 @@ class DLNAHandler(BaseHTTPRequestHandler):
 
         mime = mime_for(rel)
         try:
+            client_ip = self.client_address[0] if self.client_address else ""
+            title = rel.rsplit("/", 1)[-1] if rel else "?"
+            update_active_client(
+                client_ip, "net", f"{st.name}: {title}", track_id=f"{sid}/{rel}",
+            )
+        except Exception:
+            pass
+        try:
             size = st.size_of(rel)
         except Exception as e:
             log.warning("net stream %s/%s: size: %s", st.name, rel, e)
@@ -1687,6 +1778,31 @@ class DLNAHandler(BaseHTTPRequestHandler):
             self._send(404, b"file not found", "text/plain")
             return
         try:
+            client_ip = self.client_address[0] if self.client_address else ""
+            title = path.name
+            # USB vs прочий локальный файл
+            svc = "usb"
+            try:
+                if files and files._allowed_path(path):
+                    svc = "usb"
+                else:
+                    svc = "local"
+            except Exception:
+                svc = "local"
+            # обложка через реестр covers (короткий id)
+            cover = ""
+            try:
+                cov_svc = getattr(self.server, "covers", None)
+                if cov_svc is not None and hasattr(cov_svc, "register_file_path"):
+                    fid = cov_svc.register_file_path(str(path))
+                    if fid:
+                        cover = f"/cover/file/{fid}"
+            except Exception:
+                cover = ""
+            update_active_client(
+                client_ip, svc, title, track_id=str(path.name),
+                cover=cover,
+            )
             size = path.stat().st_size
             mime = mime_for(str(path))
 
