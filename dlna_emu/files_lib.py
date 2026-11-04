@@ -291,3 +291,158 @@ class FilesLibrary:
             if pl.id == pid:
                 return pl
         return None
+
+    # ------------------------------------------------------------------
+    # Редактор плейлистов (веб-панель → «Плейлисты USB»)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _natkey(name: str):
+        return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
+
+    def _under_roots(self, path: Path) -> bool:
+        if self._allowed_path(path):
+            return True
+        # типичный Keenetic/Entware: допускаем /tmp/mnt/* и /opt/*, даже если root не совпал
+        s = str(path)
+        return s.startswith("/tmp/mnt/") or s.startswith("/opt/")
+
+    def browse(self, path: str = "") -> Dict[str, object]:
+        """Содержимое каталога USB для веб-редактора.
+
+        path пустой → корни (или содержимое единственного корня).
+        Возвращает {path, parent, dirs: [{name, path}], files: [{name, path}]}; пути абсолютные.
+        """
+        roots = [r for r in self.roots if r.is_dir()]
+        if not path:
+            if len(roots) == 1:
+                path = str(roots[0])
+            else:
+                return {
+                    "path": "", "parent": None,
+                    "dirs": [{"name": r.name or str(r), "path": str(r)} for r in roots],
+                    "files": [],
+                }
+        target = Path(path)
+        if not target.is_dir() or not self._under_roots(target):
+            return {"path": path, "parent": None, "dirs": [], "files": [], "error": "каталог недоступен"}
+        parent: Optional[str] = ""
+        if any(target.resolve() == r.resolve() for r in roots):
+            parent = "" if len(roots) > 1 else None
+        else:
+            parent = str(target.parent)
+        dirs, files = [], []
+        try:
+            entries = sorted(target.iterdir(), key=lambda p: (not p.is_dir(), self._natkey(p.name)))
+        except OSError as e:
+            return {"path": path, "parent": parent, "dirs": [], "files": [], "error": str(e)}
+        for p in entries:
+            if p.name.startswith("."):
+                continue
+            try:
+                if p.is_dir():
+                    dirs.append({"name": p.name, "path": str(p)})
+                elif p.suffix.lower() in AUDIO_EXT:
+                    files.append({"name": p.name, "path": str(p)})
+            except OSError:
+                continue
+        return {"path": str(target), "parent": parent, "dirs": dirs, "files": files}
+
+    def expand_items(self, items: List[str], limit: int = 5000) -> List[str]:
+        """['f:/путь/файл.mp3', 'd:/путь/каталог'] → плоский список файлов (каталоги — рекурсивно)."""
+        out: List[str] = []
+        seen = set()
+
+        def add(p: Path) -> None:
+            sp = str(p)
+            if sp not in seen and len(out) < limit:
+                seen.add(sp)
+                out.append(sp)
+
+        for it in items:
+            kind, _, raw = it.partition(":")
+            if kind not in ("f", "d") or not raw:
+                continue
+            p = Path(raw)
+            if not self._under_roots(p):
+                continue
+            if kind == "f":
+                if p.is_file() and p.suffix.lower() in AUDIO_EXT:
+                    add(p)
+                continue
+            if not p.is_dir():
+                continue
+            for dirpath, dirnames, filenames in os.walk(p):
+                dirnames[:] = sorted((d for d in dirnames if not d.startswith(".")), key=self._natkey)
+                for fn in sorted(filenames, key=self._natkey):
+                    if fn.startswith("."):
+                        continue
+                    fp = Path(dirpath) / fn
+                    if fp.suffix.lower() in AUDIO_EXT:
+                        add(fp)
+                if len(out) >= limit:
+                    break
+        return out
+
+    def playlist_write_dir(self) -> Optional[Path]:
+        """Куда сохранять новые плейлисты: первая playlists_folder, иначе <корень>/playlists."""
+        if self.playlist_folders:
+            return self.playlist_folders[0]
+        for r in self.roots:
+            if r.is_dir():
+                return r / "playlists"
+        return None
+
+    @staticmethod
+    def _safe_filename(title: str) -> str:
+        name = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", (title or "").strip()).strip(" .")
+        return name[:80] or "playlist"
+
+    def save_playlist(self, title: str, items: List[str], pid: str = "") -> Tuple[Optional[LocalPlaylist], str]:
+        """Сохранить плейлист как .m3u8 (абсолютные пути). pid — перезапись существующего."""
+        title = (title or "").strip()
+        if not title:
+            return None, "Укажите название плейлиста"
+        files = self.expand_items(items)
+        if not files:
+            return None, "Не выбрано ни одного аудиофайла"
+        old: Optional[LocalPlaylist] = self.get_playlist(pid) if pid else None
+        folder = Path(old.path).parent if old else self.playlist_write_dir()
+        if folder is None:
+            return None, "Не заданы корни USB и папка плейлистов"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return None, f"Не удалось создать папку {folder}: {e}"
+        target = folder / (self._safe_filename(title) + ".m3u8")
+        if old and Path(old.path).stem == self._safe_filename(title):
+            target = Path(old.path)
+        elif target.exists() and not (old and str(target) == old.path):
+            return None, f"Плейлист «{target.stem}» уже существует"
+        lines = ["#EXTM3U"]
+        for fp in files:
+            lines.append(f"#EXTINF:-1,{Path(fp).stem}")
+            lines.append(fp)
+        try:
+            target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            if old and Path(old.path) != target and Path(old.path).is_file():
+                Path(old.path).unlink()
+        except OSError as e:
+            return None, f"Не удалось записать {target}: {e}"
+        self._pl_list = None
+        for pl in self.discover_playlists(force=True):
+            if Path(pl.path) == target:
+                return pl, ""
+        return None, "Сохранено, но плейлист не виден в списке (проверьте папку плейлистов)"
+
+    def delete_playlist(self, pid: str) -> str:
+        pl = self.get_playlist(pid)
+        if not pl:
+            return "Плейлист не найден"
+        try:
+            Path(pl.path).unlink()
+        except OSError as e:
+            return f"Не удалось удалить: {e}"
+        self._pl_list = None
+        return ""
+

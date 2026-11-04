@@ -317,6 +317,20 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:500}
 td,th{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}
 tr:last-child td{border-bottom:0}
+/* списки плейлистов: путь к файлу не раздувает строку, на телефоне — карточками */
+table.pl-table td.pl-path code{display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:700px){
+  table.pl-table,table.pl-table tbody{display:block}
+  table.pl-table tr.pl-head{display:none}
+  table.pl-table tr{display:block;padding:12px 0;border-bottom:1px solid var(--line)}
+  table.pl-table tr:last-child{border-bottom:0}
+  table.pl-table td{display:block;padding:2px 0;border:0}
+  table.pl-table td.pl-name{font-size:15px;overflow-wrap:anywhere}
+  table.pl-table td.pl-count{color:var(--muted)}
+  table.pl-table td.pl-count::after{content:" " attr(data-unit)}
+  table.pl-table td.pl-path code{max-width:100%;font-size:11px}
+  table.pl-table td.pl-act{padding-top:8px;white-space:normal !important}
+}
 code{background:var(--card2);border:1px solid var(--line);padding:1px 7px;border-radius:6px;font-size:12px;font-family:var(--mono)}
 hr{border:0;border-top:1px solid var(--line);margin:18px 0}
 details>summary{cursor:pointer}
@@ -381,6 +395,7 @@ _ICONS = {
     "favorites": '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
     "settings": '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
     "logs": '<path d="M4 17l6-5-6-5M12 19h8"/>',
+    "usb": '<path d="M9 18V6l10-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>',
 }
 
 _NAV = [
@@ -388,6 +403,7 @@ _NAV = [
     ("Музыка", [
         ("search", "/search", "Поиск"),
         ("radio", "/radio", "Радио"),
+        ("usb", "/usb", "Плейлисты USB"),
         ("favorites", "/favorites", "Избранное"),
         ("current", "/current", "Текущие плейлисты"),
     ]),
@@ -395,7 +411,7 @@ _NAV = [
 ]
 
 _EYEBROW = {
-    "status": "Обзор", "settings": "Конфигурация", "radio": "Источники", "search": "Источники",
+    "status": "Обзор", "settings": "Конфигурация", "radio": "Источники", "usb": "Источники", "search": "Источники",
     "favorites": "Библиотека", "current": "Библиотека", "logs": "Система",
 }
 
@@ -1283,14 +1299,9 @@ def _settings_body(flash: str = "") -> str:
   <p class="muted" style="margin-top:4px;font-size:12px">
     Обычно достаточно <code>/tmp/mnt</code>. Подпапки подхватываются автоматически.
   </p>
-  <label>playlists_folder — папка с плейлистами .m3u / .m3u8 (строка или список, по одному пути на строку)</label>
-  <textarea name="files_playlists_folder" rows="2"
-            placeholder="/tmp/mnt/6EE7-47CC/playlists">{html.escape(pl_folders_text)}</textarea>
-  <p class="muted" style="margin-top:4px;font-size:12px">
-    Пусто = искать .m3u по всем корням (roots). Если задана — плейлисты USB берутся только отсюда
-    (быстрее на больших дисках). Пример: <code>/tmp/mnt/6EE7-47CC/playlists</code> или
-    <code>D:/music/playlists</code> в Windows. Это музыка с USB (на ресивере «Плейлисты (USB)»), не радио.
-    Применяется сразу, без перезапуска.
+  <p class="muted" style="margin-top:8px;font-size:12px">
+    Папка с плейлистами (<code>playlists_folder</code>) и создание плейлистов — в разделе
+    <a href="/usb" style="color:var(--acc)">Плейлисты USB</a>.
   </p>
   </div>
 </details>
@@ -1366,6 +1377,231 @@ def _settings_body(flash: str = "") -> str:
 """
 
 
+_USB_JS = r"""
+(function(){
+  var cfg = window.USB_CFG || {};
+  var sel = [];                 // [{k:'f'|'d', p:path}]
+  var cur = '';
+  function $(i){return document.getElementById(i);}
+  function esc(t){var d=document.createElement('div');d.textContent=t;return d.innerHTML;}
+  function base(p){var a=p.replace(/[\\/]+$/,'').split(/[\\/]/);return a[a.length-1]||p;}
+  function has(k,p){for(var i=0;i<sel.length;i++)if(sel[i].k===k&&sel[i].p===p)return i;return -1;}
+  function toggle(k,p,on){var i=has(k,p);if(on&&i<0)sel.push({k:k,p:p});if(!on&&i>=0)sel.splice(i,1);renderSel();}
+  function renderSel(){
+    var box=$('usb-sel'),n=$('usb-count');
+    n.textContent=sel.length;
+    if(!sel.length){box.innerHTML='<p class="muted">Ничего не выбрано. Отмечайте файлы и каталоги галочками слева.</p>';}
+    else{
+      var h='<table><tr><th style="width:2.2em">#</th><th>Что добавить</th><th style="width:9em"></th></tr>';
+      sel.forEach(function(x,i){
+        h+='<tr><td>'+(i+1)+'</td><td>'+(x.k==='d'?'📁 ':'🎵 ')+'<strong>'+esc(base(x.p))+'</strong>'+
+           (x.k==='d'?' <span class="muted">(все файлы внутри)</span>':'')+
+           '<div class="muted" style="font-size:11px;word-break:break-all">'+esc(x.p)+'</div></td>'+
+           '<td style="white-space:nowrap"><button type="button" class="small ghost" data-up="'+i+'">↑</button> '+
+           '<button type="button" class="small ghost" data-dn="'+i+'">↓</button> '+
+           '<button type="button" class="small ghost" data-rm="'+i+'">✕</button></td></tr>';
+      });
+      box.innerHTML=h+'</table>';
+    }
+    // синхронизировать галочки в обзоре
+    var cbs=document.querySelectorAll('#usb-list input[data-k]');
+    for(var j=0;j<cbs.length;j++){cbs[j].checked=has(cbs[j].getAttribute('data-k'),cbs[j].getAttribute('data-p'))>=0;}
+  }
+  document.addEventListener('click',function(e){
+    var t=e.target;
+    if(t.hasAttribute&&t.hasAttribute('data-rm')){sel.splice(+t.getAttribute('data-rm'),1);renderSel();}
+    if(t.hasAttribute&&t.hasAttribute('data-up')){var i=+t.getAttribute('data-up');if(i>0){var x=sel[i];sel[i]=sel[i-1];sel[i-1]=x;renderSel();}}
+    if(t.hasAttribute&&t.hasAttribute('data-dn')){var i2=+t.getAttribute('data-dn');if(i2<sel.length-1){var y=sel[i2];sel[i2]=sel[i2+1];sel[i2+1]=y;renderSel();}}
+  });
+  function load(path){
+    var list=$('usb-list');list.innerHTML='<p class="muted">Загрузка…</p>';
+    fetch('/api/usb/ls?path='+encodeURIComponent(path||''),{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
+      cur=j.path||'';
+      var h='';
+      $('usb-path').textContent=cur||'(корни USB)';
+      if(j.error){h+='<p class="muted">'+esc(j.error)+'</p>';}
+      if(j.parent!==null&&j.parent!==undefined&&cur){h+='<div class="usb-row"><a href="#" data-go="'+esc(j.parent)+'">⬆ Вверх</a></div>';}
+      (j.dirs||[]).forEach(function(d){
+        h+='<div class="usb-row"><input type="checkbox" data-k="d" data-p="'+esc(d.path)+'" title="Добавить весь каталог"> '+
+           '<a href="#" data-go="'+esc(d.path)+'">📁 '+esc(d.name)+'</a></div>';
+      });
+      (j.files||[]).forEach(function(f){
+        h+='<div class="usb-row"><input type="checkbox" data-k="f" data-p="'+esc(f.path)+'"> 🎵 '+esc(f.name)+'</div>';
+      });
+      if(!(j.dirs||[]).length&&!(j.files||[]).length&&!j.error)h+='<p class="muted">Пусто</p>';
+      if((j.files||[]).length)h='<div class="usb-row"><label style="margin:0"><input type="checkbox" id="usb-all"> Выбрать все файлы в этом каталоге</label></div>'+h;
+      list.innerHTML=h;renderSel();
+    }).catch(function(){list.innerHTML='<p class="muted">Не удалось загрузить каталог</p>';});
+  }
+  $('usb-list').addEventListener('click',function(e){
+    var a=e.target.closest?e.target.closest('a[data-go]'):null;
+    if(a){e.preventDefault();load(a.getAttribute('data-go'));}
+  });
+  $('usb-list').addEventListener('change',function(e){
+    var t=e.target;
+    if(t.id==='usb-all'){
+      var cbs=document.querySelectorAll('#usb-list input[data-k=f]');
+      for(var i=0;i<cbs.length;i++)toggle('f',cbs[i].getAttribute('data-p'),t.checked);
+      return;
+    }
+    if(t.getAttribute&&t.getAttribute('data-k'))toggle(t.getAttribute('data-k'),t.getAttribute('data-p'),t.checked);
+  });
+  var undo=null;
+  $('usb-shuffle').addEventListener('click',function(){
+    if(!sel.length){return;}
+    var btn=this,msg=$('usb-shuffle-msg');
+    btn.disabled=true;msg.textContent='Перемешиваю…';
+    var body=new URLSearchParams();
+    body.set('items',sel.map(function(x){return x.k+':'+x.p;}).join('\n'));
+    fetch('/usb/shuffle',{method:'POST',body:body,cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
+      btn.disabled=false;
+      if(j.error||!j.items){msg.textContent=j.error||'Не удалось перемешать';return;}
+      undo=sel.slice();
+      sel=j.items.map(function(p){return {k:'f',p:p};});
+      renderSel();
+      $('usb-undo').style.display='';
+      msg.textContent='Готово: '+j.items.length+' треков, одинаковый исполнитель подряд: '+j.adj+', через один трек: '+j.skip+
+        (j.expanded?' (каталоги раскрыты в файлы)':'')+'. Не забудьте сохранить плейлист.';
+    }).catch(function(){btn.disabled=false;msg.textContent='Ошибка запроса';});
+  });
+  $('usb-undo').addEventListener('click',function(){
+    if(!undo){return;}
+    sel=undo;undo=null;renderSel();this.style.display='none';$('usb-shuffle-msg').textContent='Порядок возвращён.';
+  });
+  $('usb-form').addEventListener('submit',function(e){
+    if(!sel.length){e.preventDefault();alert('Выберите хотя бы один файл или каталог');return;}
+    $('usb-items').value=sel.map(function(x){return x.k+':'+x.p;}).join('\n');
+  });
+  (cfg.initial||[]).forEach(function(p){sel.push({k:'f',p:p});});
+  renderSel();
+  load('');
+})();
+"""
+
+
+def _usb_body(flash: str = "", edit_pid: str = "", new: bool = False) -> str:
+    tree = _STATE.get("tree")
+    files = getattr(tree, "files", None) if tree is not None else None
+    cfg = _cfg()
+    pl_folders = (cfg.get("files") or {}).get("playlists_folder") or []
+    if isinstance(pl_folders, str):
+        pl_folders = [pl_folders]
+    pl_folders_text = "\n".join(str(r) for r in pl_folders if r)
+
+    folder_card = f"""
+<div class="card">
+  <h2>Папка с плейлистами</h2>
+  <form method="POST" action="/usb/folder">
+    <label>playlists_folder — папка с плейлистами .m3u / .m3u8 (строка или список, по одному пути на строку)</label>
+    <textarea name="files_playlists_folder" rows="2"
+              placeholder="/tmp/mnt/6EE7-47CC/playlists">{html.escape(pl_folders_text)}</textarea>
+    <p class="muted" style="margin-top:4px;font-size:12px">
+      Пусто = искать .m3u по всем корням (roots) USB, новые плейлисты сохраняются в <code>&lt;корень&gt;/playlists</code>.
+      Если задана — плейлисты берутся только отсюда (быстрее на больших дисках), а новые сохраняются в первую папку списка.
+      Пример: <code>/tmp/mnt/6EE7-47CC/playlists</code> или <code>D:/music/playlists</code> в Windows.
+      Применяется сразу, без перезапуска.
+    </p>
+    <button type="submit">Сохранить папку</button>
+  </form>
+</div>"""
+
+    if files is None or not (files.roots or files.playlist_folders):
+        return folder_card + """
+<div class="card"><p class="muted">Корни USB не заданы. Укажите их в «Настройки → USB / файлы»
+(обычно <code>/tmp/mnt</code>), затем вернитесь сюда.</p></div>"""
+
+    import json as _json
+
+    # ---------- редактор ----------
+    if new or edit_pid:
+        pl = files.get_playlist(edit_pid) if edit_pid else None
+        if edit_pid and not pl:
+            return folder_card + '<div class="card"><p class="muted">Плейлист не найден. <a href="/usb">← к списку</a></p></div>'
+        initial = [t.path for t in (pl.tracks if pl else [])]
+        title = pl.title if pl else ""
+        target = files.playlist_write_dir()
+        where = pl.path if pl else (str(target) if target else "—")
+        heading = f"Редактирование: {html.escape(pl.title)}" if pl else "Новый плейлист"
+        return f"""
+<style>
+.usb-grid{{display:grid;grid-template-columns:1fr 1fr;gap:16px}}
+.usb-row{{padding:6px 4px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;font-size:13.5px}}
+.usb-row a{{color:var(--acc);text-decoration:none;word-break:break-all}}
+.usb-row input[type=checkbox]{{width:auto;flex:none}}
+#usb-list{{max-height:60vh;overflow:auto}}
+#usb-sel{{max-height:60vh;overflow:auto}}
+@media (max-width:900px){{.usb-grid{{grid-template-columns:1fr}}}}
+</style>
+<form method="POST" action="/usb/save" id="usb-form">
+<div class="card">
+  <h2>{heading}</h2>
+  <input type="hidden" name="pid" value="{html.escape(edit_pid)}">
+  <input type="hidden" name="items" id="usb-items">
+  <label>Название плейлиста</label>
+  <input name="title" value="{html.escape(title)}" placeholder="Например: Дорога" required maxlength="80">
+  <p class="muted" style="font-size:12px;margin:6px 0 0">Сохранится как <code>.m3u8</code>: <code>{html.escape(where)}</code></p>
+</div>
+<div class="usb-grid">
+  <div class="card">
+    <h2>Накопитель USB</h2>
+    <p class="muted" style="font-size:12px;margin-top:0">Тут: <code id="usb-path"></code>.
+      Галочка у каталога добавляет все файлы внутри (с подпапками), клик по названию — открывает его.</p>
+    <div id="usb-list"></div>
+  </div>
+  <div class="card">
+    <h2>В плейлисте (<span id="usb-count">0</span>)</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px">
+      <button type="button" class="small ghost" id="usb-shuffle"
+              title="Исполнители не повторяются подряд и через трек">🔀 Перемешать</button>
+      <button type="button" class="small ghost" id="usb-undo" style="display:none">↩ Вернуть порядок</button>
+      <span class="muted" id="usb-shuffle-msg" style="font-size:12px"></span>
+    </div>
+    <div id="usb-sel"></div>
+  </div>
+</div>
+<div class="card" style="display:flex;gap:10px;flex-wrap:wrap">
+  <button type="submit">💾 Сохранить плейлист</button>
+  <a class="btn ghost" href="/usb">Отмена</a>
+</div>
+</form>
+<script>window.USB_CFG={_json.dumps({"initial": initial}, ensure_ascii=False)};</script>
+<script>{_USB_JS}</script>
+"""
+
+    # ---------- список ----------
+    pls = files.discover_playlists(force=True)
+    rows = []
+    for pl in pls:
+        rows.append(f"""
+<tr>
+  <td class="pl-name"><a href="/usb?edit={html.escape(pl.id)}" style="color:var(--acc)"><strong>{html.escape(pl.title)}</strong></a></td>
+  <td class="pl-count" data-unit="треков">{len(pl.tracks)}</td>
+  <td class="pl-path"><code title="{html.escape(pl.path, quote=True)}">{html.escape(pl.path)}</code></td>
+  <td class="pl-act" style="white-space:nowrap">
+    <a class="btn small ghost" href="/usb?edit={html.escape(pl.id)}">Изменить</a>
+    <form method="POST" action="/usb/delete" style="display:inline"
+          onsubmit="return confirm('Удалить плейлист «{html.escape(pl.title, quote=True)}»?')">
+      <input type="hidden" name="pid" value="{html.escape(pl.id)}">
+      <button type="submit" class="small ghost">Удалить</button>
+    </form>
+  </td>
+</tr>""")
+    table = (
+        "<table class=\"pl-table\"><tr class=\"pl-head\"><th>Плейлист</th><th>Треков</th><th>Файл</th><th></th></tr>" + "".join(rows) + "</table>"
+        if rows else '<p class="muted">Плейлистов пока нет — создайте первый.</p>'
+    )
+    return f"""
+<div class="card">
+  <h2>Плейлисты USB</h2>
+  <p class="muted" style="margin-top:0">На ресивере: «Плейлисты (USB)». Собирайте музыку с накопителя в плейлисты —
+  отмечая файлы и целые каталоги.</p>
+  <p><a class="btn" href="/usb?new=1">➕ Создать плейлист</a></p>
+  {table}
+</div>
+{folder_card}
+"""
+
+
 def _radio_body(flash: str = "", view_pid: str = "") -> str:
     radio = _STATE.get("radio")
     if not radio:
@@ -1379,14 +1615,14 @@ def _radio_body(flash: str = "", view_pid: str = "") -> str:
     for pl in playlists:
         pl_rows.append(
             f"<tr>"
-            f"<td><a href='/radio?pl={html.escape(pl.id)}' style='color:var(--acc)'>"
+            f"<td class='pl-name'><a href='/radio?pl={html.escape(pl.id)}' style='color:var(--acc)'>"
             f"{html.escape(pl.title)}</a></td>"
-            f"<td>{len(pl.stations)}</td>"
-            f"<td><code>{html.escape(pl.path)}</code></td>"
+            f"<td class='pl-count' data-unit='станций'>{len(pl.stations)}</td>"
+            f"<td class='pl-path'><code title='{html.escape(pl.path, quote=True)}'>{html.escape(pl.path)}</code></td>"
             f"</tr>"
         )
     pl_table = (
-        "<table><tr><th>Плейлист</th><th>Станций</th><th>Файл</th></tr>"
+        "<table class='pl-table'><tr class='pl-head'><th>Плейлист</th><th>Станций</th><th>Файл</th></tr>"
         + "".join(pl_rows) + "</table>"
         if pl_rows
         else '<p class="muted">Нет .m3u в папке</p>'
@@ -2700,6 +2936,21 @@ class WebUIHandler(BaseHTTPRequestHandler):
         if path == "/settings":
             self._send_html(_page("Настройки", _settings_body(), active="settings"))
             return
+        if path == "/usb":
+            self._send_html(_page(
+                "Плейлисты USB",
+                _usb_body(edit_pid=(qs.get("edit") or [""])[0], new=bool(qs.get("new"))),
+                active="usb",
+            ))
+            return
+        if path == "/api/usb/ls":
+            tree = _STATE.get("tree")
+            files = getattr(tree, "files", None) if tree is not None else None
+            if files is None:
+                self._send_json({"path": "", "parent": None, "dirs": [], "files": [], "error": "USB не настроен"})
+            else:
+                self._send_json(files.browse((qs.get("path") or [""])[0]))
+            return
         if path == "/radio":
             view_pid = (qs.get("pl") or [""])[0]
             self._send_html(_page("Радио", _radio_body(view_pid=view_pid), active="radio"))
@@ -2889,6 +3140,94 @@ class WebUIHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             restart_service()
+            return
+
+        if path == "/usb/folder":
+            cfg = _cfg()
+            cfg.setdefault("files", {})
+            pl_raw = form.get("files_playlists_folder") or ""
+            cfg["files"]["playlists_folder"] = [
+                ln.strip() for ln in pl_raw.replace(",", "\n").splitlines() if ln.strip()
+            ]
+            msg = "Папка плейлистов сохранена"
+            try:
+                _save_yaml(cfg, _config_path())
+                _STATE["cfg"] = cfg
+                tree = _STATE.get("tree")
+                if tree is not None and getattr(tree, "files", None) is not None:
+                    tree.files.set_playlist_folders(cfg["files"]["playlists_folder"])
+            except Exception as e:
+                msg = f"Ошибка сохранения: {e}"
+            self._send_html(_page("Плейлисты USB", _usb_body(), flash=msg, active="usb"))
+            return
+
+        if path == "/usb/shuffle":
+            tree = _STATE.get("tree")
+            files = getattr(tree, "files", None) if tree is not None else None
+            if files is None:
+                self._send_json({"error": "USB не настроен"})
+                return
+            items = [ln.strip() for ln in (form.get("items") or "").splitlines() if ln.strip()]
+            expanded = any(it.startswith("d:") for it in items)
+            paths = files.expand_items(items)
+            if not paths:
+                self._send_json({"error": "Нет аудиофайлов для перемешивания"})
+                return
+            try:
+                import os as _os
+                from .shuffle import artists_for_tracks, repeat_stats, smart_shuffle
+                pairs = [(_os.path.splitext(_os.path.basename(p))[0], p) for p in paths]
+                artists = artists_for_tracks(pairs)
+                order = smart_shuffle(artists)
+                adj, skip = repeat_stats(artists, order)
+            except Exception as e:
+                log.warning("usb shuffle: %s", e)
+                self._send_json({"error": f"Ошибка перемешивания: {e}"})
+                return
+            self._send_json({
+                "items": [paths[i] for i in order],
+                "adj": adj, "skip": skip, "expanded": expanded,
+            })
+            return
+
+        if path == "/usb/save":
+            tree = _STATE.get("tree")
+            files = getattr(tree, "files", None) if tree is not None else None
+            if files is None:
+                self._send_html(_page("Плейлисты USB", _usb_body(), flash="Ошибка: USB не настроен", active="usb"))
+                return
+            items = [ln.strip() for ln in (form.get("items") or "").splitlines() if ln.strip()]
+            pl, err = files.save_playlist(form.get("title") or "", items, pid=(form.get("pid") or "").strip())
+            if err:
+                self._send_html(_page(
+                    "Плейлисты USB",
+                    _usb_body(edit_pid=(form.get("pid") or "").strip(), new=not form.get("pid")),
+                    flash=f"Ошибка: {err}", active="usb",
+                ))
+                return
+            try:
+                tree.bump_update_id()
+            except Exception:
+                pass
+            self._send_html(_page(
+                "Плейлисты USB", _usb_body(),
+                flash=f"Плейлист «{pl.title}» сохранён: {len(pl.tracks)} треков", active="usb",
+            ))
+            return
+
+        if path == "/usb/delete":
+            tree = _STATE.get("tree")
+            files = getattr(tree, "files", None) if tree is not None else None
+            err = files.delete_playlist((form.get("pid") or "").strip()) if files is not None else "USB не настроен"
+            if not err:
+                try:
+                    tree.bump_update_id()
+                except Exception:
+                    pass
+            self._send_html(_page(
+                "Плейлисты USB", _usb_body(),
+                flash=(f"Ошибка: {err}" if err else "Плейлист удалён"), active="usb",
+            ))
             return
 
         if path == "/radio/reload":
@@ -3430,9 +3769,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
             roots_raw = form.get("files_roots") or ""
             roots = [ln.strip() for ln in roots_raw.replace(",", "\n").splitlines() if ln.strip()]
             cfg["files"]["roots"] = roots
-            pl_raw = form.get("files_playlists_folder") or ""
-            pl_folders = [ln.strip() for ln in pl_raw.replace(",", "\n").splitlines() if ln.strip()]
-            cfg["files"]["playlists_folder"] = pl_folders
+            # playlists_folder теперь правится в разделе «Плейлисты USB»;
+            # из этой формы трогаем только если поле пришло (старые вкладки)
+            if form.get("files_playlists_folder") is not None:
+                pl_raw = form.get("files_playlists_folder") or ""
+                cfg["files"]["playlists_folder"] = [
+                    ln.strip() for ln in pl_raw.replace(",", "\n").splitlines() if ln.strip()
+                ]
 
             # --- network_storages ---
             if ns_items is not None:
