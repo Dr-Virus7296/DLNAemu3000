@@ -177,7 +177,7 @@ _CSS = """
   --acc:#fff; --acc-fg:#000; --acc-soft:rgba(255,255,255,.08);
   --ok:#fff; --ok-bg:#1a1a1a; --err:#fff; --err-bg:#262626; --warn:#bdbdbd;
   --shadow:0 1px 0 rgba(255,255,255,.04) inset,0 10px 30px rgba(0,0,0,.45);
-  --side:252px; --player:76px;
+  --side:252px; --player:0px;
   --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
   color-scheme:dark;
@@ -349,8 +349,51 @@ details>summary{cursor:pointer}
 .search-card .name{font-weight:600;color:var(--text)}
 .search-card .desc{color:var(--muted);font-size:13px}
 .search-card .actions{margin-left:auto;display:flex;gap:8px}
-img{filter:grayscale(1);border-radius:6px}
-main{filter:grayscale(1)}
+img{border-radius:6px}
+img:not(.dev-art){filter:grayscale(1)}
+/* интерфейс монохромный, но карточка «Устройства онлайн» показывает цветные обложки */
+main>*:not(.keep-color){filter:grayscale(1)}
+.keep-color h2,.keep-color p,.keep-color .dev-meta,.keep-color .dev-title,.keep-color .dev-art-ph{filter:grayscale(1)}
+.keep-color .dev-art{filter:none}
+.dev-art-wrap{display:block;flex:none;line-height:0}
+.icon-btn{display:inline-grid;place-items:center;width:28px;height:28px;padding:0;margin-left:6px;vertical-align:middle;border-radius:50%;
+  background:transparent;border:1px solid var(--line2);color:var(--muted);cursor:pointer}
+.icon-btn:hover{color:var(--text);border-color:var(--text)}
+.icon-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.icon-btn.spin svg{animation:rot .8s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+a.stat-link{display:block;text-decoration:none;color:inherit}
+a.stat-link:hover{border-color:var(--text)}
+.stat form.inl{display:inline}
+.ex-row{display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--line)}
+.ex-row:last-child{border-bottom:0}
+.ex-row a{color:var(--text);text-decoration:none}
+.ex-row a:hover{text-decoration:underline}
+.ex-sel{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
+/* статистика */
+.bar{height:8px;background:var(--card2);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--acc)}
+.ybars{display:grid;grid-template-columns:repeat(12,1fr);gap:8px;align-items:end}
+.ybar{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.ycol{width:100%;height:110px;display:flex;align-items:flex-end;background:var(--bg2);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.ycol>i{display:block;width:100%;background:var(--acc);min-height:2px}
+.ybar span{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.st-table td:nth-child(2){overflow-wrap:anywhere}
+.rh-table td{vertical-align:middle}
+/* топ треков на телефоне: карточкой — название в строку, ниже площадка · прослушивания · время */
+@media (max-width:700px){
+  table.tt-table,table.tt-table tbody{display:block}
+  table.tt-table tr.tt-head{display:none}
+  table.tt-table tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;padding:10px 0;border-bottom:1px solid var(--line)}
+  table.tt-table tr:last-child{border-bottom:0}
+  table.tt-table td{display:block;padding:0;border:0}
+  table.tt-table td.tt-n{flex:0 0 1.8em;color:var(--muted);font-family:var(--mono);font-size:12px}
+  table.tt-table td.tt-t{flex:1 1 calc(100% - 2.6em);min-width:0;overflow-wrap:break-word;word-break:normal}
+  table.tt-table td.tt-s,table.tt-table td.tt-p,table.tt-table td.tt-d{font-size:12px;color:var(--muted)}
+  table.tt-table td.tt-s{margin-left:calc(1.8em + 12px)}
+  table.tt-table td.tt-p::after{content:" " attr(data-unit)}
+}
+@media (max-width:700px){.ybars{gap:4px}.ybar span{font-size:9px}.stats{grid-template-columns:1fr 1fr}}
 
 
 /* ---------- статус ---------- */
@@ -396,6 +439,8 @@ _ICONS = {
     "settings": '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
     "logs": '<path d="M4 17l6-5-6-5M12 19h8"/>',
     "usb": '<path d="M9 18V6l10-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>',
+    "stats": '<path d=\"M4 20V10M10 20V4M16 20v-8M22 20H2\"/>',
+    "radiohist": '<path d=\"M3 12a9 9 0 109-9 9 9 0 00-6.4 2.6L3 8\"/><path d=\"M3 3v5h5M12 7v5l3 2\"/>',
 }
 
 _NAV = [
@@ -403,6 +448,8 @@ _NAV = [
     ("Музыка", [
         ("search", "/search", "Поиск"),
         ("radio", "/radio", "Радио"),
+        ("radiohist", "/radio-history", "История эфира"),
+        ("stats", "/stats", "Статистика"),
         ("usb", "/usb", "Плейлисты USB"),
         ("favorites", "/favorites", "Избранное"),
         ("current", "/current", "Текущие плейлисты"),
@@ -411,7 +458,8 @@ _NAV = [
 ]
 
 _EYEBROW = {
-    "status": "Обзор", "settings": "Конфигурация", "radio": "Источники", "usb": "Источники", "search": "Источники",
+    "status": "Обзор", "settings": "Конфигурация", "radio": "Источники",
+    "stats": "Музыка", "radiohist": "Музыка", "usb": "Источники", "search": "Источники",
     "favorites": "Библиотека", "current": "Библиотека", "logs": "Система",
 }
 
@@ -429,30 +477,6 @@ _PAGE_JS = """
   var d=$('th-dark'),l=$('th-light');
   if(d)d.onclick=function(){theme('dark');};
   if(l)l.onclick=function(){theme('light');};
-  var np=$('np'),tile=$('np-tile'),ttl=$('np-title'),sub=$('np-sub'),cnt=$('np-count');
-  function ago(s){s=Math.max(0,Math.round(s));return s<60?s+' с назад':Math.floor(s/60)+' мин назад';}
-  function tick(){
-    fetch('/api/now',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
-      var c=(j&&j.clients)||[];
-      if(!c.length){
-        np.classList.add('idle');tile.textContent='–';tile.classList.remove('has-cover');
-        tile.style.backgroundImage='';ttl.textContent='Ничего не играет';
-        sub.textContent='ожидание запросов от ресивера';cnt.textContent='0 устройств';return;
-      }
-      var x=c[0];np.classList.remove('idle');
-      if(x.cover){
-        tile.textContent='';tile.classList.add('has-cover');
-        tile.style.backgroundImage='url("'+x.cover+'")';
-      } else {
-        tile.classList.remove('has-cover');tile.style.backgroundImage='';
-        tile.textContent=(x.service||'?').charAt(0);
-      }
-      ttl.textContent=x.title||'—';
-      sub.textContent=(x.service||'?')+' · '+(x.ip||'?')+' · '+ago(j.now-x.ts);
-      cnt.textContent=c.length+(c.length===1?' устройство':' устройств(а)');
-    }).catch(function(){});
-  }
-  if(np){tick();setInterval(tick,4000);}
 })();
 """
 
@@ -527,12 +551,6 @@ def _page(title: str, body: str, flash: str = "", active: str = "") -> bytes:
     {body}
   </main>
 </div>
-<footer class="player idle" id="np">
-  <div class="np-tile" id="np-tile">–</div>
-  <div class="np-main"><div class="np-title" id="np-title">Ничего не играет</div><div class="np-sub" id="np-sub">ожидание запросов от ресивера</div></div>
-  <div class="eq"><i></i><i></i><i></i><i></i><i></i></div>
-  <a class="np-count" id="np-count" href="/">0 устройств</a>
-</footer>
 <script>{_PAGE_JS}</script>
 </body>
 </html>"""
@@ -630,66 +648,679 @@ def _dlna_cover_url(rel: str) -> str:
         return rel
 
 
-def _devices_card() -> str:
-    try:
-        from .server import get_active_clients
-        clients = get_active_clients()
-    except Exception:
-        clients = []
-    if not clients:
-        return """
-<div class="card">
-  <h2>Устройства онлайн</h2>
-  <p class="muted">Сейчас никто не слушает. Пока идёт длинный трек, устройство остаётся online (keepalive 30 с).</p>
-</div>
-"""
+# ============================================================
+#  Статистика, история эфира радио, «живые» устройства онлайн
+# ============================================================
+
+_MONTHS_RU = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
+              "сентября", "октября", "ноября", "декабря"]
+_MONTHS_NOM = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август",
+               "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+_MONTHS_SHORT = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
+
+_SVC_LABELS = {
+    "usb": "USB / файлы", "file": "USB / файлы", "local": "Локальные файлы",
+    "net": "Сетевое хранилище", "yandex": "Яндекс.Музыка", "kion": "КИОН Музыка",
+    "zvuk": "Звук", "deezer": "Deezer", "radio": "Радио", "drivemusic": "DriveMusic",
+    "promodj": "PromoDJ", "zaycev": "Zaycev.net", "akniga": "akniga.org",
+}
+
+
+def _svc_label(svc: str) -> str:
+    return _SVC_LABELS.get(svc, svc or "?")
+
+
+def _fmt_dur(sec) -> str:
+    """12345 → «3 ч 25 мин»; меньше часа → «42 мин»; меньше минуты → «35 с»."""
+    sec = int(sec or 0)
+    if sec < 60:
+        return f"{sec} с"
+    m = sec // 60
+    if m < 60:
+        return f"{m} мин"
+    h, m = divmod(m, 60)
+    if h < 100:
+        return f"{h} ч {m:02d} мин"
+    return f"{h} ч"
+
+
+def _bar(pct: float) -> str:
+    pct = max(0.0, min(100.0, pct))
+    return f'<div class="bar"><i style="width:{pct:.1f}%"></i></div>'
+
+
+def _stats_settings() -> dict:
+    from . import stats as _st
+    return _st.clean_settings(_cfg().get("stats"))
+
+
+def _stats_body(year: int = 0, flash_extra: str = "", month: str = "") -> str:
+    from . import stats as _st
+    S = _st.get_stats()
+    if S is None:
+        return '<div class="card"><p class="muted">Статистика не инициализирована.</p></div>'
+    cfg_s = _stats_settings()
+    if month and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
+        month = ""
+    d = S.summary(top_artists=cfg_s["top_artists"], top_tracks=cfg_s["top_tracks"], year=year or None, month=month)
+    total = d["total"] or 1
+    esc = html.escape
+
+    def _month_label(m: str) -> str:
+        return f"{_MONTHS_NOM[int(m[5:7]) - 1]} {m[:4]}"
+
+    # --- выбор месяца ---
+    months_avail = S.available_months()
+    cur_m = time.strftime("%Y-%m")
+    mopts = "".join(
+        f'<option value="{m}"{" selected" if m == month else ""}>{esc(_month_label(m))}</option>'
+        for m in months_avail
+    )
+    ly, lm = time.localtime().tm_year, time.localtime().tm_mon - 1
+    if lm == 0:
+        ly, lm = ly - 1, 12
+    prev_m = f"{ly}-{lm:02d}"
+    picker = f"""
+<div class="card" style="padding:14px 22px">
+  <form method="GET" action="/stats" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0">
+    <label style="margin:0">Период</label>
+    <select name="month" style="max-width:220px" onchange="this.form.submit()">
+      <option value=""{"" if month else " selected"}>За всё время</option>{mopts}
+    </select>
+    <a class="btn small ghost" href="/stats?month={prev_m}">Прошлый месяц</a>
+    {'<a class="btn small ghost" href="/stats">← За всё время</a>' if month else ''}
+  </form>
+  <p class="muted" style="font-size:12px;margin:8px 0 0">Прошлые месяцы хранятся сжатыми (gzip); при просмотре они распаковываются в памяти и сразу забываются.</p>
+</div>"""
+    disabled_note = ("" if cfg_s["enabled"] else
+                     '<div class="flash err">Сбор статистики выключен — новые прослушивания не записываются '
+                     '(включить можно внизу страницы).</div>')
+
+    # --- верхние карточки ---
+    ts = d["top_service"]
+    top_svc = _svc_label(ts["svc"]) if ts else "—"
+    top_svc_s = f"{_fmt_dur(ts['sec'])} · {ts['plays']} прослуш." if ts else "пока нет данных"
+    head_month = f'<h2 style="font-size:20px;margin:0 0 12px;text-transform:none;letter-spacing:0;color:var(--text)">{esc(_month_label(month))}</h2>' if month else ""
+    cards = f"""{head_month}
+<div class="stats">
+  <div class="stat"><div class="stat-k">Всего слушал</div><div class="stat-v">{esc(_fmt_dur(d['total']))}</div><div class="stat-s">{d['plays']} прослушиваний</div></div>
+  <div class="stat"><div class="stat-k">Музыка</div><div class="stat-v">{esc(_fmt_dur(d['music']))}</div><div class="stat-s">треки с USB и стримингов</div></div>
+  <div class="stat"><div class="stat-k">Радио</div><div class="stat-v">{esc(_fmt_dur(d['radio']))}</div><div class="stat-s">интернет-потоки</div></div>
+  <div class="stat"><div class="stat-k">Любимая площадка</div><div class="stat-v">{esc(top_svc)}</div><div class="stat-s">{esc(top_svc_s)}</div></div>
+</div>"""
+    if d["books"]:
+        cards += f'<p class="muted" style="margin:-6px 0 14px">Аудиокниги: {esc(_fmt_dur(d["books"]))}</p>'
+
+    # --- площадки ---
     rows = []
-    for c in clients:
-        ip = html.escape(str(c.get("ip") or "?"))
-        svc_raw = str(c.get("service") or "?")
-        svc_labels = {
-            "usb": "USB / файлы",
-            "local": "Локальный файл",
-            "net": "Сетевое хранилище",
-            "file": "USB / файлы",
-            "yandex": "Яндекс.Музыка",
-            "kion": "КИОН Музыка",
-            "zvuk": "Звук",
-            "deezer": "Deezer",
-            "radio": "Радио",
-            "drivemusic": "DriveMusic",
-            "promodj": "PromoDJ",
-            "zaycev": "Zaycev.net",
-            "akniga": "akniga.org",
-        }
-        svc = html.escape(svc_labels.get(svc_raw, svc_raw))
-        title = html.escape(str(c.get("title") or "?"))
-        cover = _dlna_cover_url(str(c.get("cover") or ""))
-        ts = c.get("ts") or 0
-        ago = int(time.time() - ts)
-        ago_s = f"{ago} сек. назад" if ago < 60 else f"{ago // 60} мин. назад"
-        st = "▶" if c.get("streaming") else ""
-        if cover:
-            art = (
-                f'<img class="dev-art" src="{html.escape(cover)}" alt="" loading="lazy" '
-                f'onerror="this.outerHTML=\'<div class=dev-art-ph>♪</div>\'">'
-            )
-        else:
-            art = '<div class="dev-art-ph">♪</div>'
+    for r in d["services"]:
+        share = r["sec"] * 100.0 / total
         rows.append(
-            f'<div class="dev-row">{art}'
-            f'<div style="min-width:0;flex:1">'
-            f'<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{title}</div>'
-            f'<div class="muted" style="font-size:12.5px;margin-top:2px">'
-            f'<code>{ip}</code> · {svc} {st} · {ago_s}</div>'
-            f'</div></div>'
+            f"<tr><td>{esc(_svc_label(r['svc']))}</td><td>{esc(_fmt_dur(r['sec']))}</td>"
+            f"<td>{r['plays']}</td><td style='width:34%'>{_bar(share)}</td><td>{share:.0f}%</td></tr>"
         )
+    svc_card = (
+        '<div class="card"><h2>Площадки</h2>'
+        + ("<table><tr><th>Площадка</th><th>Время</th><th>Прослуш.</th><th></th><th></th></tr>"
+           + "".join(rows) + "</table>" if rows else '<p class="muted">Пока нет данных — включите музыку на ресивере.</p>')
+        + "</div>"
+    )
+
+    # --- топ исполнителей ---
+    arow = []
+    for i, a in enumerate(d["artists"], 1):
+        arow.append(f"<tr><td>{i}</td><td><strong>{esc(a['name'])}</strong></td><td>{a['plays']}</td><td>{esc(_fmt_dur(a['sec']))}</td></tr>")
+    art_card = (
+        f'<div class="card"><h2>Топ исполнителей ({cfg_s["top_artists"]})</h2>'
+        + ("<table class='st-table'><tr><th>#</th><th>Исполнитель</th><th>Прослуш.</th><th>Время</th></tr>"
+           + "".join(arow) + "</table>" if arow else '<p class="muted">Исполнители появятся после первых прослушиваний.</p>')
+        + "</div>"
+    )
+
+    # --- топ треков ---
+    trow = []
+    for i, t in enumerate(d["tracks"], 1):
+        who = f"<div class='muted' style='font-size:12px'>{esc(t['artist'])}</div>" if t.get("artist") else ""
+        trow.append(
+            f"<tr><td class='tt-n'>{i}</td><td class='tt-t'><strong>{esc(t['title'])}</strong>{who}</td>"
+            f"<td class='tt-s'>{esc(_svc_label(t['svc']))}</td><td class='tt-p' data-unit='прослуш.'>{t['plays']}</td>"
+            f"<td class='tt-d'>{esc(_fmt_dur(t['sec']))}</td></tr>"
+        )
+    trk_card = (
+        f'<div class="card"><h2>Топ треков ({cfg_s["top_tracks"]})</h2>'
+        + ("<table class='st-table tt-table'><tr class='tt-head'><th>#</th><th>Трек</th><th>Площадка</th><th>Прослуш.</th><th>Время</th></tr>"
+           + "".join(trow) + "</table>" if trow else '<p class="muted">Треки появятся после первых прослушиваний.</p>')
+        + "</div>"
+    )
+
+    # --- по месяцам ---
+    mx = max([m["sec"] for m in d["months"]] or [1]) or 1
+    mrow = []
+    for m in d["months"]:
+        y, mo = m["month"].split("-")
+        label = f"{_MONTHS_NOM[int(mo) - 1]} {y}"
+        mrow.append(
+            f"<tr><td><a href='/stats?month={m['month']}'>{esc(label)}</a></td><td>{esc(_fmt_dur(m['sec']))}</td><td>{m['plays']}</td>"
+            f"<td>{esc(_svc_label(m['top_svc']))}</td><td style='width:28%'>{_bar(m['sec'] * 100.0 / mx)}</td></tr>"
+        )
+    month_card = (
+        '<div class="card"><h2>По месяцам</h2>'
+        + ("<table class='st-table'><tr><th>Месяц</th><th>Время</th><th>Прослуш.</th><th>Площадка №1</th><th></th></tr>"
+           + "".join(mrow) + "</table>" if mrow else '<p class="muted">Пока нет данных.</p>')
+        + "</div>"
+    )
+
+    # --- за год ---
+    y = d["year"]
+    ys = d["year_sum"]
+    ymax = max([m["sec"] for m in ys["months"]] or [1]) or 1
+    year_opts = "".join(f'<option value="{yy}"{" selected" if yy == y else ""}>{yy}</option>' for yy in d["years"])
+    bars = "".join(
+        f'<div class="ybar"><div class="ycol"><i style="height:{m["sec"] * 100.0 / ymax:.0f}%" title="{esc(_fmt_dur(m["sec"]))}"></i></div>'
+        f'<span>{_MONTHS_SHORT[i]}</span></div>'
+        for i, m in enumerate(ys["months"])
+    )
+    ta, tt = ys["top_artist"], ys["top_track"]
+    year_lines = [
+        f"<li>Всего: <b>{esc(_fmt_dur(ys['sec']))}</b>, прослушиваний: <b>{ys['plays']}</b></li>",
+        f"<li>Главная площадка: <b>{esc(_svc_label(ys['top_service']) if ys['top_service'] else '—')}</b></li>",
+    ]
+    if ta:
+        year_lines.append(f"<li>Исполнитель года: <b>{esc(ta['name'])}</b> ({ta['plays']} прослуш.)</li>")
+    if tt:
+        who = f"{tt['artist']} — " if tt.get("artist") else ""
+        year_lines.append(f"<li>Трек года: <b>{esc(who + tt['title'])}</b> ({tt['plays']} прослуш.)</li>")
+    year_card = f"""
+<div class="card"><h2>Статистика за год</h2>
+  <form method="GET" action="/stats" style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+    <label style="margin:0">Год</label>
+    <select name="year" onchange="this.form.submit()" style="max-width:120px">{year_opts}</select>
+  </form>
+  <ul style="margin:0 0 14px;padding-left:18px;line-height:1.8">{''.join(year_lines)}</ul>
+  <div class="ybars">{bars}</div>
+</div>"""
+
+    # --- радио ---
+    srow = []
+    smax = max([s["sec"] for s in d["stations"]] or [1]) or 1
+    for s in d["stations"][:30]:
+        last = datetime.fromtimestamp(s["last"]).strftime("%d.%m.%Y") if s["last"] else ""
+        srow.append(
+            f"<tr><td><strong>{esc(s['name'])}</strong></td><td>{esc(_fmt_dur(s['sec']))}</td>"
+            f"<td>{s['sessions']}</td><td>{esc(last)}</td><td style='width:26%'>{_bar(s['sec'] * 100.0 / smax)}</td></tr>"
+        )
+    pop_html = ""
+    try:
+        radio = _STATE.get("radio")
+        pop = radio.popular.top()[:10] if radio is not None and getattr(radio, "popular", None) else []
+        if pop:
+            pop_html = (
+                "<h3 style='margin:18px 0 8px'>Ваши популярные радиостанции</h3>"
+                "<p class='muted' style='margin:0 0 6px;font-size:12.5px'>Станции, которые вы слушали подолгу "
+                "(тот же список, что в «Радио → Ваше популярное радио»).</p>"
+                "<table><tr><th>Станция</th><th>Долгих прослушиваний</th><th>Время</th></tr>"
+                + "".join(f"<tr><td>{esc(p['name'])}</td><td>{p['count']}</td><td>{esc(_fmt_dur(p['sec']))}</td></tr>" for p in pop)
+                + "</table>"
+            )
+    except Exception:  # noqa: BLE001
+        pass
+    radio_card = (
+        f'<div class="card"><h2>Радио</h2><p style="margin-top:0">Всего слушал радио: <b>{esc(_fmt_dur(d["radio"]))}</b>'
+        f' · станций: <b>{len(d["stations"])}</b></p>'
+        + ("<table class='st-table'><tr><th>Станция</th><th>Время</th><th>Включений</th><th>Последний раз</th><th></th></tr>"
+           + "".join(srow) + "</table>" if srow else '<p class="muted">Время радио считается, пока эмулятор проксирует поток '
+           '(Настройки → Радио → проксирование). Пока записей нет.</p>')
+        + pop_html + "</div>"
+    )
+
+    # --- автоплейлист + настройки ---
+    auto_status = esc(S.auto_last_status() or "ещё не собирался")
+    chk = " checked" if cfg_s["auto_playlist"] else ""
+    enabled_chk = " checked" if cfg_s["enabled"] else ""
+    si = S.storage_info()
+    storage_line = (f"Хранилище: текущий месяц {si['plain'] // 1024} КБ; архив — {si['months_gz']} мес. "
+                    f"в сжатом виде, {si['gz'] // 1024} КБ.")
+    settings_card = f"""
+<div class="card"><h2>Настройки статистики и автоплейлист USB</h2>
+  <form method="POST" action="/stats/settings">
+    <label style="display:flex;gap:8px;align-items:center;margin:0 0 6px"><input type="checkbox" name="enabled" value="1"{enabled_chk} style="width:auto">
+      <b>Собирать статистику прослушивания</b></label>
+    <p class="muted" style="font-size:12.5px;margin:0 0 12px">{esc(storage_line)}</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+      <div><label>Топ исполнителей (1–100)</label><input type="number" name="top_artists" min="1" max="100" value="{cfg_s['top_artists']}"></div>
+      <div><label>Топ треков (1–500)</label><input type="number" name="top_tracks" min="1" max="500" value="{cfg_s['top_tracks']}"></div>
+      <div><label>Засчитывать прослушивание, если играло дольше (сек)</label><input type="number" name="min_sec" min="1" max="3600" value="{cfg_s['min_sec']}"></div>
+      <div><label>Автоочистка: если статистика больше (МБ; 0 — выкл.)</label><input type="number" name="max_mb" min="0" max="100000" value="{cfg_s['max_mb']}"></div>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:8px 0 0">Короче порога (по умолчанию 30 секунд) — пропуск, в статистику не попадает.
+      Когда данные занимают больше указанного размера, автоматически удаляются 3 самых старых месяца (текущий не трогается).</p>
+    <hr>
+    <label style="display:flex;gap:8px;align-items:center;margin:0 0 10px"><input type="checkbox" name="auto_playlist" value="1"{chk} style="width:auto">
+      Автоматически создавать и обновлять USB-плейлист по статистике</label>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+      <div><label>Название плейлиста</label><input name="auto_title" value="{esc(cfg_s['auto_title'])}" maxlength="80"></div>
+      <div><label>Макс. треков (10–1000)</label><input type="number" name="auto_max" min="10" max="1000" value="{cfg_s['auto_max']}"></div>
+      <div><label>Обновлять раз в (часов)</label><input type="number" name="auto_hours" min="1" max="720" value="{cfg_s['auto_hours']}"></div>
+    </div>
+    <p class="muted" style="font-size:12.5px">В плейлист попадают файлы с USB — ваши самые часто прослушиваемые треки по статистике
+      (прослушивания трека на разных площадках и на флешке складываются; если трека со стриминга нет на флешке, он пропускается).
+      Берутся только прослушанные треки, а не все песни топ-исполнителей; количество ограничено «Макс. треков».
+      Порядок перемешан так, чтобы исполнители не шли подряд. Плейлист появится в «Плейлисты USB» и на ресивере.</p>
+    <p class="muted" style="font-size:12.5px;margin-top:0">Состояние: {auto_status}</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button type="submit">Сохранить</button>
+      <button type="submit" formaction="/stats/playlist" class="ghost">🎧 Собрать плейлист сейчас</button>
+      <button type="submit" formaction="/stats/clear" class="ghost"
+              onclick="return confirm('Удалить всю статистику прослушивания? Это необратимо.')">🗑 Сбросить статистику</button>
+    </div>
+  </form>
+</div>"""
+
+    import json as _json
+    exclude_card = f"""
+<div class="card"><h2>Не учитывать папки USB</h2>
+  <p class="muted" style="margin-top:0;font-size:12.5px">Отметьте галочкой папки, которые не должны попадать в статистику
+    (в них не будут записываться новые прослушивания, а уже записанные скрываются из отчётов). Клик по названию папки — открыть её и отметить вложенные.</p>
+  <form method="POST" action="/stats/exclude" id="ex-form">
+    <input type="hidden" name="exclude_dirs" id="ex-val">
+    <div class="muted" style="font-size:12.5px;margin-bottom:6px">Сейчас открыто: <code id="ex-path">…</code></div>
+    <div id="ex-list" style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:4px 10px"></div>
+    <h3 style="margin:14px 0 6px;font-size:14px">Исключены (<span id="ex-count">0</span>)</h3>
+    <div id="ex-sel"></div>
+    <div style="margin-top:12px"><button type="submit">Сохранить список</button></div>
+  </form>
+</div>
+<script>window.EX_SEL={_json.dumps(cfg_s["exclude_dirs"], ensure_ascii=False)};</script>
+<script>{_EXCLUDE_JS}</script>
+"""
+    note = (f'<p class="muted" style="font-size:12.5px;margin:0 0 14px">Время — оценка по запросам ресивера: '
+            'для радио и потоковых треков точно, для треков, которые ресивер загружает в буфер целиком — '
+            f'по моменту запуска следующего трека (не больше длительности). Короче {cfg_s["min_sec"]} сек. не считаем.</p>')
+    if month:
+        return picker + disabled_note + cards + svc_card + art_card + trk_card + radio_card + flash_extra
+    return (picker + disabled_note + cards + note + svc_card + art_card + trk_card + month_card + year_card
+            + radio_card + settings_card + exclude_card + flash_extra)
+
+
+# ---------- История эфира ----------
+
+def _radiohist_settings() -> dict:
+    return _stats_settings()
+
+
+def _radio_names() -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    try:
+        radio = _STATE.get("radio")
+        if radio is not None:
+            for pl in radio.list_playlists():
+                for st in pl.stations:
+                    out[st.url] = st.name
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _radio_history_data() -> dict:
+    from . import stats as _st
+    rh = _st.get_radio_history()
+    cfg_s = _radiohist_settings()
+    items = rh.latest(cfg_s["radio_stations"], cfg_s["radio_tracks"], _radio_names()) if rh else []
+    return {"now": time.time(), "stations": items,
+            "n_stations": cfg_s["radio_stations"], "n_tracks": cfg_s["radio_tracks"]}
+
+
+_EXCLUDE_JS = r"""
+(function(){
+  function $(i){return document.getElementById(i);}
+  function esc(t){var d=document.createElement('div');d.textContent=t==null?'':t;return d.innerHTML;}
+  var sel=(window.EX_SEL||[]).slice(), cur='';
+  function covered(p){ // папка внутри уже исключённой (выше по дереву)
+    for(var i=0;i<sel.length;i++){var s=sel[i]; if(p!==s && p.indexOf(s+'/')===0) return s;} return '';
+  }
+  function renderSel(){
+    $('ex-count').textContent=sel.length;
+    var h='';
+    sel.forEach(function(p,i){h+='<div class="ex-sel"><span>📁 '+esc(p)+'</span><button type="button" class="ghost small" data-rm="'+i+'">✕</button></div>';});
+    $('ex-sel').innerHTML=h||'<p class="muted" style="margin:0">Ничего не исключено — учитываются все папки.</p>';
+    $('ex-val').value=sel.join('\n');
+  }
+  function load(path){
+    var list=$('ex-list');list.innerHTML='<p class="muted">Загрузка…</p>';
+    fetch('/api/usb/ls?path='+encodeURIComponent(path||''),{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
+      cur=j.path||'';$('ex-path').textContent=cur||'(корни USB)';
+      var h='';
+      if(j.error)h+='<p class="muted">'+esc(j.error)+'</p>';
+      if(j.parent!==null&&j.parent!==undefined&&cur)h+='<div class="ex-row"><a href="#" data-go="'+esc(j.parent)+'">⬆ Вверх</a></div>';
+      (j.dirs||[]).forEach(function(d){
+        var up=covered(d.path), on=sel.indexOf(d.path)>=0||!!up;
+        h+='<div class="ex-row"><input type="checkbox" data-p="'+esc(d.path)+'"'+(on?' checked':'')+(up?' disabled':'')+'> '+
+           '<a href="#" data-go="'+esc(d.path)+'">📁 '+esc(d.name)+'</a>'+(up?' <span class="muted" style="font-size:11.5px">(исключена папкой выше)</span>':'')+'</div>';
+      });
+      if(!(j.dirs||[]).length&&!j.error)h+='<p class="muted">Вложенных папок нет</p>';
+      list.innerHTML=h;
+    }).catch(function(){list.innerHTML='<p class="muted">Не удалось загрузить каталог</p>';});
+  }
+  $('ex-list').addEventListener('click',function(e){
+    var a=e.target.closest?e.target.closest('a[data-go]'):null;
+    if(a){e.preventDefault();load(a.getAttribute('data-go'));}
+  });
+  $('ex-list').addEventListener('change',function(e){
+    var t=e.target;if(!t.getAttribute||!t.getAttribute('data-p'))return;
+    var p=t.getAttribute('data-p'), i=sel.indexOf(p);
+    if(t.checked&&i<0){sel=sel.filter(function(x){return x.indexOf(p+'/')!==0;});sel.push(p);}  // вложенные поглощаются
+    if(!t.checked&&i>=0)sel.splice(i,1);
+    renderSel();load(cur);
+  });
+  $('ex-sel').addEventListener('click',function(e){
+    var b=e.target.closest?e.target.closest('button[data-rm]'):null;
+    if(b){sel.splice(+b.getAttribute('data-rm'),1);renderSel();load(cur);}
+  });
+  renderSel();load('');
+})();
+"""
+
+
+_RADIOHIST_JS = r"""
+(function(){
+  function $(i){return document.getElementById(i);}
+  function esc(t){var d=document.createElement('div');d.textContent=t==null?'':t;return d.innerHTML;}
+  var data=window.RH_DATA||{stations:[]}, off=0;
+  function ago(s){s=Math.max(0,Math.round(s));
+    if(s<60)return 'только что';
+    var m=Math.floor(s/60);if(m<60)return m+' мин назад';
+    var h=Math.floor(m/60);return h+' ч '+(m%60)+' мин назад';}
+  function hm(t){var d=new Date(t*1000);return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);}
+  function nowS(){return Date.now()/1000+off;}
+  function render(){
+    var box=$('rh-list');if(!box)return;
+    var st=data.stations||[];
+    if(!st.length){box.innerHTML='<div class="card"><p class="muted">Пока пусто. Названия треков появятся, когда вы включите радиостанцию, '+
+      'которая передаёт их в потоке (ICY), при включённом проксировании радио.</p></div>';return;}
+    var h='';
+    st.forEach(function(s){
+      h+='<div class="card"><h2>'+esc(s.name)+' <span class="muted" style="text-transform:none;letter-spacing:0;font-family:inherit">· слушали '+ago(nowS()-s.last)+'</span></h2>'+
+         '<table class="rh-table"><tr><th style="width:4.5em">Время</th><th style="width:9em">Прошло</th><th>Трек</th><th style="width:7em"></th></tr>';
+      (s.tracks||[]).forEach(function(t){
+        var name=(t.artist?t.artist+' — ':'')+t.title;
+        var q=(t.artist?t.artist+' ':'')+t.title;
+        h+='<tr><td>'+hm(t.t)+'</td><td class="muted" data-ago="'+t.t+'">'+ago(nowS()-t.t)+'</td><td><strong>'+esc(name)+'</strong></td>'+
+           '<td><a class="btn small ghost" href="/search?pick=1&q='+encodeURIComponent(q)+'">🔍 Найти</a></td></tr>';
+      });
+      h+='</table></div>';
+    });
+    box.innerHTML=h;
+  }
+  function tickAgo(){
+    var cells=document.querySelectorAll('#rh-list [data-ago]');
+    for(var i=0;i<cells.length;i++)cells[i].textContent=ago(nowS()-(+cells[i].getAttribute('data-ago')));
+  }
+  function load(){
+    fetch('/api/radio/history',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
+      data=j;off=j.now-Date.now()/1000;render();
+    }).catch(function(){});
+  }
+  off=(data.now||0)-Date.now()/1000;render();
+  setInterval(function(){if(!document.hidden)load();},10000);
+  setInterval(tickAgo,15000);
+})();
+"""
+
+
+def _radiohist_body() -> str:
+    import json as _json
+    cfg_s = _radiohist_settings()
+    data = _radio_history_data()
     return f"""
 <div class="card">
-  <h2>Устройства онлайн</h2>
-  <p class="muted">Пока ресивер слушает поток, он остаётся в списке (обновление каждые 30 с).</p>
-  {''.join(rows)}
+  <h2>Настройки</h2>
+  <form method="POST" action="/radio-history/settings" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+    <div><label>Сколько последних радиопотоков (1–10)</label>
+      <input type="number" name="radio_stations" min="1" max="10" value="{cfg_s['radio_stations']}" style="max-width:150px"></div>
+    <div><label>Сколько последних треков на поток (1–30)</label>
+      <input type="number" name="radio_tracks" min="1" max="30" value="{cfg_s['radio_tracks']}" style="max-width:150px"></div>
+    <button type="submit">Сохранить</button>
+    <button type="submit" formaction="/radio-history/clear" class="ghost"
+            onclick="return confirm('Очистить историю эфира?')">Очистить историю</button>
+  </form>
+  <p class="muted" style="font-size:12.5px;margin-bottom:0">Показываются потоки, которые вы слушали последними, и что на них играло
+    (по названиям трека, которые станция передаёт в потоке). Список обновляется сам. Кнопка «Найти» откроет поиск с готовым
+    названием — останется выбрать площадку.</p>
 </div>
+<div id="rh-list"></div>
+<script>window.RH_DATA={_json.dumps(data, ensure_ascii=False)};</script>
+<script>{_RADIOHIST_JS}</script>
+"""
+
+
+def _search_pick_body(q: str) -> str:
+    """Поиск с готовым названием: пользователь выбирает площадку."""
+    sites = [
+        ("deezer", "Deezer", "deezer"), ("yandex", "Яндекс.Музыка", "yandex"),
+        ("kion", "КИОН Музыка", "kion"), ("zvuk", "Звук", "zvuk"),
+        ("drivemusic", "DriveMusic", "drivemusic"), ("promodj", "PromoDJ", "promodj"),
+        ("zaycev", "Zaycev.net", "zaycev"),
+    ]
+    btns = []
+    for key, label, state_key in sites:
+        cl = _STATE.get(state_key)
+        ok = bool(cl and (getattr(cl, "enabled", False) or (getattr(cl, "token", "") or "").strip()))
+        dis = "" if ok else ' disabled title="Площадка не подключена"'
+        btns.append(f'<button type="submit" name="site" value="{key}"{dis}>{html.escape(label)}</button>')
+    return f"""
+<div class="card">
+  <h2>Найти трек</h2>
+  <form method="GET" action="/search">
+    <label>Что искать (можно поправить)</label>
+    <input name="q" value="{html.escape(q, quote=True)}" autofocus>
+    <p class="muted" style="font-size:12.5px;margin:10px 0 8px">Выберите, где искать:</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">{''.join(btns)}</div>
+  </form>
+</div>
+"""
+
+
+# ---------- Лог-файл: размер, предупреждение, очистка ----------
+
+def _log_files() -> list:
+    """Файлы, куда пишет служба (stdout/stderr, если это файлы) + типовой путь на Entware."""
+    paths: list = []
+    for fd in (1, 2):
+        try:
+            pth = os.readlink(f"/proc/self/fd/{fd}")
+            if pth.startswith("/") and os.path.isfile(pth):
+                paths.append(pth)
+        except OSError:
+            pass
+    for pth in ((_cfg().get("log_file") or ""), "/opt/var/log/dlna-emu.log"):
+        if pth and os.path.isfile(pth):
+            paths.append(pth)
+    out: list = []
+    for pth in paths:
+        if pth not in out:
+            out.append(pth)
+    return out
+
+
+def _log_size_bytes() -> int:
+    total = 0
+    for pth in _log_files():
+        try:
+            total += os.path.getsize(pth)
+        except OSError:
+            pass
+    return total
+
+
+def _fmt_size(n: int) -> str:
+    if n >= 1024 * 1024:
+        return f"{n / 1024 / 1024:.1f} МБ"
+    return f"{n / 1024:.0f} КБ"
+
+
+def _log_clear() -> int:
+    """Обнулить лог-файлы; указатель записи у stdout/stderr возвращаем в начало (иначе остались бы «дыры»)."""
+    n = 0
+    for pth in _log_files():
+        try:
+            os.truncate(pth, 0)
+            n += 1
+            for fd in (1, 2):
+                try:
+                    if os.readlink(f"/proc/self/fd/{fd}") == pth:
+                        os.lseek(fd, 0, os.SEEK_SET)
+                except OSError:
+                    pass
+        except OSError as e:
+            log.warning("не удалось очистить %s: %s", pth, e)
+    return n
+
+
+LOG_MAX_MB_DEFAULT = 0.5
+LOG_MAX_MB_LIMIT = 10.0
+
+
+def _log_max_mb() -> float:
+    """Порог автоочистки лога, МБ: 0 — выключена, максимум 10, по умолчанию 0.5 (500 КБ)."""
+    raw = _cfg().get("log_max_mb", LOG_MAX_MB_DEFAULT)
+    try:
+        v = float(str(raw).replace(",", "."))
+    except (TypeError, ValueError):
+        v = LOG_MAX_MB_DEFAULT
+    return max(0.0, min(LOG_MAX_MB_LIMIT, v))
+
+
+def _fmt_mb(v: float) -> str:
+    return f"{v:.2f}".rstrip("0").rstrip(".") or "0"
+
+
+def _log_autoclean_once() -> bool:
+    limit = _log_max_mb()
+    if limit <= 0:
+        return False
+    if _log_size_bytes() <= limit * 1024 * 1024:
+        return False
+    n = _log_clear()
+    if n:
+        log.info("Лог-файл превысил %s МБ — очищен автоматически", _fmt_mb(limit))
+    return bool(n)
+
+
+def _log_autoclean_loop() -> None:
+    while True:
+        time.sleep(30)
+        try:
+            _log_autoclean_once()
+        except Exception as e:  # noqa: BLE001
+            log.debug("автоочистка лога: %s", e)
+
+
+def _service_card() -> str:
+    return """
+<div class="card">
+  <h2>Служба</h2>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <form method="POST" action="/restart" onsubmit="return confirm('Перезапустить службу DLNA-emu?')" style="margin:0">
+      <button type="submit" class="ghost">Перезапустить службу</button>
+    </form>
+    <span class="muted" style="font-size:12.5px">Полный перезапуск (как stop + start в SSH); панель пропадёт на несколько секунд.</span>
+  </div>
+</div>
+"""
+
+
+def _log_file_card() -> str:
+    size = _log_size_bytes()
+    files = _log_files()
+    where = ", ".join(files) if files else "лог пишется не в файл (консоль/syslog)"
+    limit = _log_max_mb()
+    return f"""
+<div class="card">
+  <h2>Лог-файл</h2>
+  <p style="margin:0 0 8px">Размер лога: <b>{html.escape(_fmt_size(size))}</b>
+    <span class="muted" style="font-size:12px"> · {html.escape(where)}</span></p>
+  <form method="POST" action="/service/logmax" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:0">
+    <div><label>Очищать лог автоматически, если он больше (МБ, не более {_fmt_mb(LOG_MAX_MB_LIMIT)}; 0 — не очищать)</label>
+      <input type="number" name="log_max_mb" min="0" max="{_fmt_mb(LOG_MAX_MB_LIMIT)}" step="0.1" value="{_fmt_mb(limit)}" style="max-width:140px"></div>
+    <button type="submit">Сохранить</button>
+    <button type="submit" formaction="/service/logclear" class="ghost"
+            onclick="return confirm('Очистить лог-файл службы?')">Очистить лог сейчас</button>
+  </form>
+  <p class="muted" style="font-size:12.5px;margin:8px 0 0">По умолчанию 0.5 МБ (500 КБ). Проверка — раз в 30 секунд; файл обнуляется целиком.</p>
+</div>
+"""
+
+
+# ---------- «Устройства онлайн» в реальном времени ----------
+
+_DEVLIVE_JS = r"""
+(function(){
+  var box=document.getElementById('dev-rows');if(!box)return;
+  var L=window.DEV_LABELS||{}, off=0, rows={};
+  function esc(t){var d=document.createElement('div');d.textContent=t==null?'':t;return d.innerHTML;}
+  function ago(s){s=Math.max(0,Math.round(s));return s<60?s+' сек. назад':Math.floor(s/60)+' мин. назад';}
+  function nowS(){return Date.now()/1000+off;}
+  function metaText(x){
+    var st=x.streaming?' ▶':'';
+    var lbl=L[x.service]||x.service||'?';
+    var extra=(x.service==='radio'&&x.track)?' · '+esc(x.title):'';
+    return '<code>'+esc(x.ip||'?')+'</code> · '+esc(lbl)+st+extra+' · <span data-ts="'+x.ts+'">'+ago(nowS()-x.ts)+'</span>';
+  }
+  function art(x){
+    if(x.cover){return '<img class="dev-art" src="'+esc(x.cover)+'" alt="" onerror="this.outerHTML=\'<div class=dev-art-ph>♪</div>\'">';}
+    return '<div class="dev-art-ph">♪</div>';
+  }
+  function update(j){
+    off=j.now-Date.now()/1000;
+    var list=(j.clients||[]);
+    var empty=document.getElementById('dev-empty');
+    if(!list.length){
+      for(var k in rows){rows[k].el.remove();delete rows[k];}
+      if(empty)empty.style.display='';return;
+    }
+    if(empty)empty.style.display='none';
+    var seen={};
+    list.forEach(function(x){
+      seen[x.ip]=1;
+      var title=(x.service==='radio'&&x.track)?x.track:(x.title||'?');
+      var r=rows[x.ip];
+      if(!r){
+        var el=document.createElement('div');el.className='dev-row';
+        el.innerHTML='<span class="dev-art-wrap"></span><div style="min-width:0;flex:1"><div class="dev-title" style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div class="muted dev-meta" style="font-size:12.5px;margin-top:2px"></div></div>';
+        box.appendChild(el);
+        r=rows[x.ip]={el:el,cover:null,title:null};
+      }
+      if(r.cover!==(x.cover||'')){r.cover=x.cover||'';r.el.querySelector('.dev-art-wrap').innerHTML=art(x);}
+      if(r.title!==title){r.title=title;r.el.querySelector('.dev-title').textContent=title;}
+      r.el.querySelector('.dev-meta').innerHTML=metaText(x);
+    });
+    for(var ip in rows){if(!seen[ip]){rows[ip].el.remove();delete rows[ip];}}
+  }
+  function load(){
+    fetch('/api/now',{cache:'no-store'}).then(function(r){return r.json();}).then(update).catch(function(){});
+  }
+  function tick(){
+    var c=box.querySelectorAll('[data-ts]');
+    for(var i=0;i<c.length;i++)c[i].textContent=ago(nowS()-(+c[i].getAttribute('data-ts')));
+  }
+  load();
+  setInterval(function(){if(!document.hidden)load();},2000);
+  setInterval(tick,1000);
+})();
+"""
+
+
+def _devices_card() -> str:
+    """Карточка «Устройства онлайн»: рисуется на клиенте и обновляется каждые 2 с."""
+    import json as _json
+    return f"""
+<div class="card keep-color" id="dev-card">
+  <h2>Устройства онлайн</h2>
+  <p class="muted" id="dev-empty">Сейчас никто не слушает. Пока ресивер играет, здесь видно трек и обложку в реальном времени.</p>
+  <div id="dev-rows"></div>
+</div>
+<script>window.DEV_LABELS={_json.dumps(_SVC_LABELS, ensure_ascii=False)};</script>
+<script>{_DEVLIVE_JS}</script>
 """
 
 
@@ -838,10 +1469,13 @@ def _status_body() -> str:
   <div class="stat"><div class="stat-k">Веб-панель</div><div class="stat-v">:{web_port}</div>
     <div class="stat-s"><a href="{html.escape(desc_url)}">description.xml</a></div></div>
   <div class="stat"><div class="stat-k">SSDP</div><div class="stat-v">{ssdp_html}</div>
-    <div class="stat-s">анонс в сети{ssdp_err}</div></div>
-  <div class="stat"><div class="stat-k">Радио</div><div class="stat-v">{n_pl}</div>
-    <div class="stat-s">плейлистов M3U</div></div>
+    <div class="stat-s">анонс в сети{ssdp_err}
+      <form class="inl" method="POST" action="/ssdp/announce"><button type="submit" class="icon-btn" title="Объявить сервер в сети заново (SSDP)" onclick="this.classList.add('spin')"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg></button></form>
+    </div></div>
+  <a class="stat stat-link" href="/radio" title="Открыть радио"><div class="stat-k">Радио</div><div class="stat-v">{n_pl}</div>
+    <div class="stat-s">плейлистов M3U</div></a>
 </div>
+{_service_card()}
 <div class="card">
   <h2>Источники</h2>
   <div class="tiles">{tiles}</div>
@@ -850,20 +1484,6 @@ def _status_body() -> str:
   </div>
 </div>
 {_devices_card()}
-<div class="card">
-  <h2>На ресивере</h2>
-  <p class="muted">Network / Server / DLNA → <strong>{html.escape(str(server.get("name") or "DLNA-emu"))}</strong></p>
-  <form method="POST" action="/ssdp/announce" style="margin:10px 0">
-    <button type="submit">Объявить сервер в сети (SSDP)</button>
-  </form>
-</div>
-<div class="card">
-  <h2>Служба</h2>
-  <p class="muted">Полный перезапуск эмулятора (то же, что stop + start в SSH). Связь с панелью пропадёт на несколько секунд.</p>
-  <form method="POST" action="/restart" onsubmit="return confirm('Перезапустить службу DLNA-emu?')" style="margin:10px 0">
-    <button type="submit" class="ghost">Перезапустить службу</button>
-  </form>
-</div>
 """
 
 
@@ -2000,6 +2620,59 @@ def _dmsearch_body(flash: str = "", q: str = "") -> str:
 """
 
 
+_SITE_LABELS = {
+    "deezer": "Deezer", "drivemusic": "DriveMusic", "yandex": "Яндекс.Музыка", "zvuk": "Звук",
+    "kion": "КИОН Музыка", "zaycev": "Zaycev.net", "promodj": "PromoDJ", "akniga": "akniga.org",
+}
+
+
+def _fav_form(site: str, stype: str, id_field: str, ident: str, title: str, query: str) -> str:
+    """Кнопка «⭐ В избранное» рядом с «+ В DLNA»."""
+    e = html.escape
+    return (
+        '<form method="POST" action="/search/favorite" style="display:inline">'
+        f'<input type="hidden" name="site" value="{e(site)}">'
+        f'<input type="hidden" name="type" value="{e(stype)}">'
+        f'<input type="hidden" name="{e(id_field)}" value="{e(str(ident))}">'
+        f'<input type="hidden" name="title" value="{e(title)}">'
+        f'<input type="hidden" name="query" value="{e(query)}">'
+        '<button type="submit" class="small ghost">⭐ В избранное</button></form>'
+    )
+
+
+def _search_settings() -> dict:
+    raw = (_cfg().get("search") or {})
+    v = raw.get("persist", False)
+    persist = v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
+    try:
+        show = int(raw.get("history_show", 10))
+    except (TypeError, ValueError):
+        show = 10
+    return {"persist": persist, "history_show": max(1, min(50, show))}
+
+
+def _search_settings_card() -> str:
+    st = _search_settings()
+    chk = " checked" if st["persist"] else ""
+    return f"""
+<div class="card">
+  <h2>Настройки истории поиска</h2>
+  <form method="POST" action="/search/settings" style="margin:0">
+    <label style="display:flex;gap:8px;align-items:center;margin:0 0 10px"><input type="checkbox" name="persist" value="1"{chk} style="width:auto">
+      Сохранять результаты поиска («Мои поиски») после перезагрузки</label>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div><label>Показывать в истории поиска (1–50) результатов</label>
+        <input type="number" name="history_show" min="1" max="50" value="{st['history_show']}" style="max-width:140px"></div>
+      <button type="submit">Сохранить</button>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:8px 0 0">По умолчанию выключено: история живёт до перезапуска службы.
+      Показываются последние добавленные записи (и в веб-панели, и на ресивере); хранится до 50 на площадку.
+      «⭐ Избранное» сохраняется всегда, до 500 записей на каждую площадку.</p>
+  </form>
+</div>
+"""
+
+
 def _search_body(flash: str = "", q: str = "", site: str = "deezer", page: int = 1) -> str:
     deezer = _STATE.get("deezer")
     dm = _STATE.get("drivemusic")
@@ -2232,6 +2905,7 @@ def _search_body(flash: str = "", q: str = "", site: str = "deezer", page: int =
       <input type="hidden" name="query" value="{html.escape(q)}">
       <button type="submit" class="small">+ В DLNA</button>
     </form>
+    {_fav_form("promodj", "artist", "artist_id", u.slug, u.name, q)}
   </div>
 </div>""")
             for tr in tracks:
@@ -2312,7 +2986,9 @@ def _search_body(flash: str = "", q: str = "", site: str = "deezer", page: int =
                     f'<input type="hidden" name="title" value="{html.escape(aname)}">'
                     f'<input type="hidden" name="query" value="{html.escape(q)}">'
                     '<button type="submit" class="small">+ В DLNA</button>'
-                    '</form></div></div>'
+                    '</form> '
+                    + _fav_form(site, "artist", "artist_id", str(a.get("id") or ""), aname, q)
+                    + '</div></div>'
                 )
             except Exception as e:
                 log.warning("webui artist card: %s", e)
@@ -2355,7 +3031,9 @@ def _search_body(flash: str = "", q: str = "", site: str = "deezer", page: int =
                     f'<input type="hidden" name="title" value="{html.escape(full)}">'
                     f'<input type="hidden" name="query" value="{html.escape(q)}">'
                     '<button type="submit" class="small">+ В DLNA</button>'
-                    '</form></div></div>'
+                    '</form> '
+                    + _fav_form(site, "album", "album_id", str(al.get("id") or ""), full, q)
+                    + '</div></div>'
                 )
             except Exception as e:
                 log.warning("webui album card: %s", e)
@@ -2437,18 +3115,11 @@ def _search_body(flash: str = "", q: str = "", site: str = "deezer", page: int =
         return rows
 
     if site == "akniga":
-        favs = tree.ak_favorites() if (tree and hasattr(tree, "ak_favorites")) else []
         saved_rows = _rows_for(saved, "/search/remove", "akniga", "saved")
-        fav_rows = _rows_for(favs, "/search/remove", "akniga", "favorite")
         saved_html = (
             "".join(saved_rows)
             if saved_rows
             else '<p class="muted">Пока пусто. Найди книгу и нажми «+ В DLNA».</p>'
-        )
-        fav_html = (
-            "".join(fav_rows)
-            if fav_rows
-            else '<p class="muted">Пока пусто. Найди книгу и нажми «⭐ В избранное».</p>'
         )
         extra_cards = f"""
 <div class="card">
@@ -2456,11 +3127,6 @@ def _search_body(flash: str = "", q: str = "", site: str = "deezer", page: int =
   <p class="muted">Появляются на ресивере в <strong>akniga.org (аудиокниги) → 🔍 Мои книги</strong> (до перезапуска).</p>
   {saved_html}
   {('<form method="POST" action="/search/clear" style="margin-top:12px"><input type="hidden" name="site" value="akniga"><input type="hidden" name="list" value="saved"><button type="submit" class="ghost">Очистить всё</button></form>') if saved else ''}
-</div>
-<div class="card">
-  <h2>⭐ Избранное · akniga.org</h2>
-  <p class="muted">Полное управление — на вкладке <a href="/favorites" style="color:var(--text)">⭐ Избранное</a>. Сохраняется в <code>akniga_favorites.json</code> (до 500). На ресивере: <strong>akniga.org (аудиокниги) → ⭐ Избранное</strong>.</p>
-  {fav_html}
 </div>
 """
         hint_text = (
@@ -2503,6 +3169,7 @@ def _search_body(flash: str = "", q: str = "", site: str = "deezer", page: int =
 </div>
 
 {extra_cards}
+{_search_settings_card()}
 """
 
 
@@ -2733,51 +3400,68 @@ def _chk_simple(name: str, label: str, checked_attr: str, hint: str = "") -> str
 
 
 
-def _favorites_body(flash: str = "") -> str:
-    tree = _STATE.get("tree")
-    favs = tree.ak_favorites() if (tree and hasattr(tree, "ak_favorites")) else []
-    n = len(favs)
+def _fav_rows(site: str, favs: list, remove_action: str) -> str:
     rows = []
     for s in favs:
+        t = s.get("type")
+        icon = "📖" if t == "book" else ("👤" if t == "artist" else ("📂" if t == "playlist" else "💿"))
+        kind = {"book": "Книга", "artist": "Артист", "playlist": "Плейлист"}.get(t, "Альбом")
         rows.append(f"""
 <div class="search-card">
   <div>
-    <div class="name">📖 {html.escape(s.get('title') or '')}</div>
-    <div class="desc">Книга{(' · запрос: ' + html.escape(s.get('query') or '')) if s.get('query') else ''}</div>
+    <div class="name">{icon} {html.escape(s.get('title') or '')}</div>
+    <div class="desc">{kind}{(' · запрос: ' + html.escape(s.get('query') or '')) if s.get('query') else ''}</div>
   </div>
   <div class="actions">
-    <form method="POST" action="/favorites/remove" style="display:inline">
+    <form method="POST" action="{remove_action}" style="display:inline">
+      <input type="hidden" name="site" value="{html.escape(site)}">
+      <input type="hidden" name="list" value="favorite">
       <input type="hidden" name="sid" value="{html.escape(s.get('id') or '')}">
       <button type="submit" class="small ghost">Удалить</button>
     </form>
   </div>
 </div>""")
-    if not rows:
-        list_html = (
-            '<p class="muted">Пока пусто. Найди книгу на вкладке '
-            '<a href="/search?site=akniga" style="color:var(--text)">🔍 Поиск</a> '
-            'и нажми «⭐ В избранное».</p>'
-        )
-    else:
-        list_html = "".join(rows)
-    clear_btn = ""
-    if favs:
-        clear_btn = (
-            '<form method="POST" action="/favorites/clear" style="margin-top:12px">'
-            '<button type="submit" class="ghost">Очистить всё избранное</button></form>'
-        )
-    return f"""
+    return "".join(rows)
+
+
+def _favorites_body(flash: str = "") -> str:
+    tree = _STATE.get("tree")
+    sections = []
+    total = 0
+    order = ("akniga", "deezer", "drivemusic", "yandex", "zvuk", "kion", "zaycev", "promodj")
+    for site in order:
+        if site == "akniga":
+            favs = tree.ak_favorites() if (tree and hasattr(tree, "ak_favorites")) else []
+        else:
+            favs = tree.site_favorites(site) if (tree and hasattr(tree, "site_favorites")) else []
+        total += len(favs)
+        if not favs and site != "akniga":
+            continue
+        label = _SITE_LABELS.get(site, site)
+        body = _fav_rows(site, favs, "/favorites/remove") if favs else (
+            '<p class="muted">Пока пусто. Найдите книгу на вкладке '
+            '<a href="/search?site=akniga" style="color:var(--text)">🔍 Поиск</a> и нажмите «⭐ В избранное».</p>')
+        clear = (f'<form method="POST" action="/favorites/clear" style="margin-top:12px">'
+                 f'<input type="hidden" name="site" value="{site}">'
+                 f'<button type="submit" class="ghost">Очистить избранное · {html.escape(label)}</button></form>') if favs else ""
+        file_note = "akniga_favorites.json" if site == "akniga" else "favorites_sites.json"
+        sections.append(f"""
 <div class="card">
-  <h2>⭐ Избранное · akniga.org</h2>
+  <h2>⭐ Избранное · {html.escape(label)}</h2>
   <p class="muted">
-    Книги сохраняются в <code>akniga_favorites.json</code> и переживают рестарт.
-    На ресивере: <strong>akniga.org (аудиокниги) → ⭐ Избранное</strong>.
-    Занято: <strong>{n}</strong> / 500.
+    Хранится в <code>{file_note}</code> и переживает рестарт.
+    На ресивере: <strong>{html.escape(label)} → ⭐ Избранное</strong>.
+    Занято: <strong>{len(favs)}</strong> / 500.
   </p>
-  {list_html}
-  {clear_btn}
-</div>
-"""
+  {body}
+  {clear}
+</div>""")
+    intro = ""
+    if total == 0:
+        intro = ('<div class="card"><p class="muted" style="margin:0">Пока ничего нет. На вкладке '
+                 '<a href="/search" style="color:var(--text)">🔍 Поиск</a> рядом с «+ В DLNA» есть кнопка «⭐ В избранное» '
+                 '(до 500 записей на каждую площадку).</p></div>')
+    return intro + "".join(sections)
 
 
 def _logs_body() -> str:
@@ -2804,6 +3488,7 @@ def _logs_body() -> str:
   </div>
   <div class="logs" id="logs"></div>
 </div>
+{_log_file_card()}
 <script>
 (function() {{
   const box = document.getElementById('logs');
@@ -2928,7 +3613,31 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 cov = c.get("cover") or ""
                 if cov and not cov.startswith("http"):
                     c["cover"] = _dlna_cover_url(cov)
+                if c.get("service") == "radio":
+                    # что сейчас играет на станции (ICY из проксируемого потока)
+                    try:
+                        from . import radio_proxy
+                        _, pid, idx = str(c.get("track_id") or "").split(":", 2)
+                        stn = _STATE["radio"].get_station(pid, int(idx))
+                        live = radio_proxy.live_title(stn.url) if stn else None
+                        if live:
+                            c["track"] = live
+                    except Exception:
+                        pass
             self._send_json({"now": time.time(), "clients": clients})
+            return
+        if path == "/api/radio/history":
+            self._send_json(_radio_history_data())
+            return
+        if path == "/stats":
+            try:
+                yr = int((qs.get("year") or ["0"])[0])
+            except (TypeError, ValueError):
+                yr = 0
+            self._send_html(_page("Статистика", _stats_body(year=yr, month=(qs.get("month") or [""])[0]), active="stats"))
+            return
+        if path == "/radio-history":
+            self._send_html(_page("История эфира", _radiohist_body(), active="radiohist"))
             return
         if path in ("/", "/status"):
             self._send_html(_page("Статус", _status_body(), active="status"))
@@ -2954,6 +3663,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
         if path == "/radio":
             view_pid = (qs.get("pl") or [""])[0]
             self._send_html(_page("Радио", _radio_body(view_pid=view_pid), active="radio"))
+            return
+        if path == "/search" and (qs.get("pick") or [""])[0]:
+            self._send_html(_page("Поиск", _search_pick_body((qs.get("q") or [""])[0]), active="search"))
             return
         if path == "/search":
             q = (qs.get("q") or [""])[0]
@@ -3140,6 +3852,124 @@ class WebUIHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             restart_service()
+            return
+
+        if path in ("/service/logmax", "/service/logclear"):
+            msg = ""
+            if path == "/service/logclear":
+                n = _log_clear()
+                msg = f"Лог очищен ({n} файл.)" if n else "Нет лог-файла, который можно очистить"
+            else:
+                cfg = _cfg()
+                try:
+                    v = float(str(form.get("log_max_mb", "")).replace(",", "."))
+                except ValueError:
+                    v = LOG_MAX_MB_DEFAULT
+                v = max(0.0, min(LOG_MAX_MB_LIMIT, v))
+                cfg["log_max_mb"] = round(v, 2)
+                msg = (f"Автоочистка лога: больше {_fmt_mb(v)} МБ" if v > 0 else "Автоочистка лога выключена")
+                try:
+                    _save_yaml(cfg, _config_path())
+                    _STATE["cfg"] = cfg
+                except Exception as e:
+                    msg = f"Ошибка сохранения: {e}"
+                else:
+                    try:
+                        _log_autoclean_once()
+                    except Exception:  # noqa: BLE001
+                        pass
+            self._send_html(_page("Консоль", _logs_body(), flash=msg, active="logs"))
+            return
+
+        if path in ("/stats/settings", "/stats/playlist", "/stats/clear"):
+            from . import stats as _st
+            S = _st.get_stats()
+            if path == "/stats/clear":
+                if S is not None:
+                    S.clear()
+                self._send_html(_page("Статистика", _stats_body(), flash="Статистика сброшена", active="stats"))
+                return
+            cfg = _cfg()
+            cur = _st.clean_settings(cfg.get("stats"))
+            cur.update({
+                "enabled": bool(form.get("enabled")),
+                "top_artists": form.get("top_artists", cur["top_artists"]),
+                "top_tracks": form.get("top_tracks", cur["top_tracks"]),
+                "min_sec": form.get("min_sec", cur["min_sec"]),
+                "max_mb": form.get("max_mb", cur["max_mb"]),
+                "auto_playlist": bool(form.get("auto_playlist")),
+                "auto_title": form.get("auto_title", cur["auto_title"]),
+                "auto_max": form.get("auto_max", cur["auto_max"]),
+                "auto_hours": form.get("auto_hours", cur["auto_hours"]),
+            })
+            clean = _st.clean_settings(cur)
+            cfg["stats"] = {**(cfg.get("stats") or {}), **clean}
+            msg = "Настройки статистики сохранены"
+            try:
+                _save_yaml(cfg, _config_path())
+                _STATE["cfg"] = cfg
+            except Exception as e:
+                msg = f"Ошибка сохранения: {e}"
+            if S is not None:
+                S._set_cache = (0.0, {})
+                try:
+                    n_del = S.prune_if_needed()
+                    if n_del:
+                        msg += f"; удалено старых месяцев: {n_del}"
+                except Exception:  # noqa: BLE001
+                    pass
+            if path == "/stats/playlist" and S is not None:
+                tree = _STATE.get("tree")
+                files = getattr(tree, "files", None) if tree is not None else None
+                if files is None:
+                    msg = "Ошибка: USB не настроен (корни USB в настройках)"
+                elif S.run_auto_async(files, clean):
+                    msg = "Сборка плейлиста запущена в фоне — обновите страницу через несколько секунд"
+                else:
+                    msg = "Плейлист уже собирается — подождите"
+            self._send_html(_page("Статистика", _stats_body(), flash=msg, active="stats"))
+            return
+
+        if path == "/stats/exclude":
+            from . import stats as _st
+            cfg = _cfg()
+            cur = _st.clean_settings(cfg.get("stats"))
+            cur["exclude_dirs"] = form.get("exclude_dirs", "")
+            clean = _st.clean_settings(cur)
+            cfg["stats"] = {**(cfg.get("stats") or {}), **clean}
+            msg = f"Исключённых папок: {len(clean['exclude_dirs'])}"
+            try:
+                _save_yaml(cfg, _config_path())
+                _STATE["cfg"] = cfg
+            except Exception as e:
+                msg = f"Ошибка сохранения: {e}"
+            S0 = _st.get_stats()
+            if S0 is not None:
+                S0._set_cache = (0.0, {})
+            self._send_html(_page("Статистика", _stats_body(), flash=msg, active="stats"))
+            return
+
+        if path in ("/radio-history/settings", "/radio-history/clear"):
+            from . import stats as _st
+            if path == "/radio-history/clear":
+                rh = _st.get_radio_history()
+                if rh is not None:
+                    rh.clear()
+                self._send_html(_page("История эфира", _radiohist_body(), flash="История эфира очищена", active="radiohist"))
+                return
+            cfg = _cfg()
+            cur = _st.clean_settings(cfg.get("stats"))
+            cur["radio_stations"] = form.get("radio_stations", cur["radio_stations"])
+            cur["radio_tracks"] = form.get("radio_tracks", cur["radio_tracks"])
+            clean = _st.clean_settings(cur)
+            cfg["stats"] = {**(cfg.get("stats") or {}), **clean}
+            msg = "Настройки сохранены"
+            try:
+                _save_yaml(cfg, _config_path())
+                _STATE["cfg"] = cfg
+            except Exception as e:
+                msg = f"Ошибка сохранения: {e}"
+            self._send_html(_page("История эфира", _radiohist_body(), flash=msg, active="radiohist"))
             return
 
         if path == "/usb/folder":
@@ -3509,6 +4339,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     elif stype == "album" and hasattr(tree, "add_saved_album"):
                         tree.add_saved_album(form.get("album_id") or "", title, query)
                         added = f"Альбом «{title}» → Deezer → 🔍 Мои поиски"
+            if tree and hasattr(tree, "save_search_history"):
+                tree.save_search_history()
             self._send_html(_page(
                 "Поиск",
                 _search_body(q=form.get("query") or "", site=site),
@@ -3521,20 +4353,29 @@ class WebUIHandler(BaseHTTPRequestHandler):
             tree = _STATE.get("tree")
             site = (form.get("site") or "akniga").lower()
             added = None
-            if tree and site == "akniga":
+            if tree:
                 stype = form.get("type") or ""
                 title = form.get("title") or ""
                 query = form.get("query") or ""
-                if stype == "book" and hasattr(tree, "add_ak_favorite"):
-                    status = tree.add_ak_favorite(form.get("slug") or "", title, query)
-                    if status == "ok":
-                        added = f"«{title}» добавлена в избранное → akniga.org → ⭐ Избранное"
-                    elif status == "exists":
-                        added = f"«{title}» уже в избранном"
-                    elif status == "limit":
-                        added = "Вы достигли максимального лимита (500 книг в избранном)"
+                label = _SITE_LABELS.get(site, site)
+                if site == "akniga":
+                    if stype == "book" and hasattr(tree, "add_ak_favorite"):
+                        status = tree.add_ak_favorite(form.get("slug") or "", title, query)
                     else:
-                        added = "Не удалось добавить в избранное"
+                        status = "empty"
+                elif hasattr(tree, "add_site_favorite"):
+                    ident = form.get("artist_id") or form.get("album_id") or form.get("playlist_id") or ""
+                    status = tree.add_site_favorite(site, stype, ident, title, query)
+                else:
+                    status = "empty"
+                if status == "ok":
+                    added = f"«{title}» добавлено в избранное → {label} → ⭐ Избранное"
+                elif status == "exists":
+                    added = f"«{title}» уже в избранном"
+                elif status == "limit":
+                    added = f"Достигнут лимит избранного для площадки «{label}»: 500"
+                else:
+                    added = "Не удалось добавить в избранное"
             self._send_html(_page(
                 "Поиск",
                 _search_body(q=form.get("query") or "", site=site),
@@ -3543,11 +4384,38 @@ class WebUIHandler(BaseHTTPRequestHandler):
             ))
             return
 
+        if path == "/search/settings":
+            cfg = _cfg()
+            try:
+                show = int(form.get("history_show", "10"))
+            except ValueError:
+                show = 10
+            new = {"persist": bool(form.get("persist")), "history_show": max(1, min(50, show))}
+            was = _search_settings()["persist"]
+            cfg["search"] = {**(cfg.get("search") or {}), **new}
+            msg = "Настройки поиска сохранены"
+            try:
+                _save_yaml(cfg, _config_path())
+                _STATE["cfg"] = cfg
+            except Exception as e:
+                msg = f"Ошибка сохранения: {e}"
+            tree = _STATE.get("tree")
+            if tree is not None:
+                if new["persist"]:
+                    tree.save_search_history()
+                elif was:
+                    tree.delete_search_history_file()
+            self._send_html(_page("Поиск", _search_body(q="", site=(form.get("site") or "deezer")),
+                                  flash=msg, active="search"))
+            return
+
         if path == "/search/remove":
             tree = _STATE.get("tree")
             site = (form.get("site") or "deezer").lower()
             list_kind = (form.get("list") or "").lower()
-            if tree:
+            if tree and list_kind == "favorite" and site != "akniga" and hasattr(tree, "remove_site_favorite"):
+                tree.remove_site_favorite(site, form.get("sid") or "")
+            elif tree:
                 if site == "drivemusic" and hasattr(tree, "remove_dm_saved"):
                     tree.remove_dm_saved(form.get("sid") or "")
                 elif site == "akniga":
@@ -3567,6 +4435,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     tree.remove_pd_saved(form.get("id") or form.get("sid") or "")
                 elif hasattr(tree, "remove_saved"):
                     tree.remove_saved(form.get("sid") or "")
+            if tree and hasattr(tree, "save_search_history"):
+                tree.save_search_history()
             self._send_html(_page(
                 "Поиск", _search_body(q="", site=site), active="search",
             ))
@@ -3576,7 +4446,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
             tree = _STATE.get("tree")
             site = (form.get("site") or "deezer").lower()
             list_kind = (form.get("list") or "").lower()
-            if tree:
+            if tree and list_kind == "favorite" and site != "akniga" and hasattr(tree, "clear_site_favorites"):
+                tree.clear_site_favorites(site)
+            elif tree:
                 if site == "drivemusic" and hasattr(tree, "clear_dm_saved"):
                     tree.clear_dm_saved()
                 elif site == "akniga":
@@ -3594,6 +4466,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     tree.clear_zy_saved()
                 elif hasattr(tree, "clear_saved"):
                     tree.clear_saved()
+            if tree and hasattr(tree, "save_search_history"):
+                tree.save_search_history()
             self._send_html(_page(
                 "Поиск", _search_body(q="", site=site), active="search",
             ))
@@ -3601,8 +4475,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         if path == "/favorites/remove":
             tree = _STATE.get("tree")
-            if tree and hasattr(tree, "remove_ak_favorite"):
-                tree.remove_ak_favorite(form.get("sid") or "")
+            site = (form.get("site") or "akniga").lower()
+            if tree:
+                if site == "akniga" and hasattr(tree, "remove_ak_favorite"):
+                    tree.remove_ak_favorite(form.get("sid") or "")
+                elif hasattr(tree, "remove_site_favorite"):
+                    tree.remove_site_favorite(site, form.get("sid") or "")
             self._send_html(_page(
                 "Избранное",
                 _favorites_body(),
@@ -3613,8 +4491,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         if path == "/favorites/clear":
             tree = _STATE.get("tree")
-            if tree and hasattr(tree, "clear_ak_favorites"):
-                tree.clear_ak_favorites()
+            site = (form.get("site") or "akniga").lower()
+            if tree:
+                if site == "akniga" and hasattr(tree, "clear_ak_favorites"):
+                    tree.clear_ak_favorites()
+                elif hasattr(tree, "clear_site_favorites"):
+                    tree.clear_site_favorites(site)
             self._send_html(_page(
                 "Избранное",
                 _favorites_body(),
@@ -3910,5 +4792,6 @@ def start_webui(host: str, port: int) -> ThreadingHTTPServer:
     httpd = ThreadingHTTPServer((host, port), WebUIHandler)
     t = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True)
     t.start()
+    threading.Thread(target=_log_autoclean_loop, name="log-autoclean", daemon=True).start()
     log.info("Web UI at http://%s:%s", host if host != "0.0.0.0" else "0.0.0.0", port)
     return httpd

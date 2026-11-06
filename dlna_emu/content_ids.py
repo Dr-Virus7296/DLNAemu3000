@@ -140,8 +140,17 @@ ZY_PAGE_PREFIX = "zaycev:page:"           # zaycev:page:{kind}:{key}:{chunk}
 ZY_ARTIST_PREFIX = "zaycev:artist:"       # сохранённый артист
 ZY_TR_PREFIX = "zaycev:tr:"               # трек
 
-SAVED_LIMIT = 40
+SAVED_LIMIT = 50                 # максимум хранимых результатов поиска на площадку (показывается search.history_show)
 AK_FAVORITES_LIMIT = 500
+SITE_FAVORITES_LIMIT = 500       # избранное (артисты/альбомы/плейлисты) — до 500 на каждую площадку
+SEARCH_HISTORY_SHOW_DEFAULT = 10
+DZ_FAV = "deezer:favorites"
+DM_FAV = "drivemusic:favorites"
+YA_FAV = "yandex:favorites"
+ZV_FAV = "zvuk:favorites"
+KION_FAV = "kion:favorites"
+PD_FAV = "promodj:favorites"
+ZY_FAV = "zaycev:favorites"
 
 FLOW_MAX_PAGE = 50
 # Виртуальный плейлист Flow: ресивер один раз читает каталог (100 слотов),

@@ -118,6 +118,14 @@ class ContentTree:
         self._zy_saved_lock = threading.Lock()
         self._system_update_id = 1
         self._load_ak_favorites()
+        # избранное остальных площадок (артисты/альбомы/плейлисты), до 500 на площадку
+        self._site_favs: Dict[str, List[dict]] = {}
+        self._site_favs_lock = threading.Lock()
+        _fdir = os.path.dirname(self._favorites_path) if self._favorites_path else ""
+        self._site_favs_path = os.path.join(_fdir, "favorites_sites.json") if self._favorites_path else ""
+        self._search_hist_path = os.path.join(_fdir, "search_history.json") if self._favorites_path else ""
+        self.search_cfg_fn = None          # () -> {"persist": bool, "history_show": int}
+        self._load_site_favorites()
 
         # История подборок (текущий плейлист): service -> list of folders
         # folder: {id, title, tracks: [...], start_index, updated}
@@ -1284,7 +1292,7 @@ class ContentTree:
 
     def saved_searches(self) -> List[dict]:
         with self._saved_lock:
-            return list(self._saved)
+            return self._hist(self._saved)
 
     def add_saved_artist(self, artist_id: str, name: str, query: str = "") -> None:
         with self._saved_lock:
@@ -1328,7 +1336,7 @@ class ContentTree:
 
     def dm_saved_searches(self) -> List[dict]:
         with self._dm_saved_lock:
-            return list(self._dm_saved)
+            return self._hist(self._dm_saved)
 
     def add_dm_saved_artist(self, artist_id: str, name: str, query: str = "") -> None:
         with self._dm_saved_lock:
@@ -1358,7 +1366,7 @@ class ContentTree:
 
     def ak_saved_books(self) -> List[dict]:
         with self._ak_saved_lock:
-            return list(self._ak_saved)
+            return self._hist(self._ak_saved)
 
     def add_ak_saved_book(self, slug: str, title: str, query: str = "") -> None:
         slug = (slug or "").strip()
@@ -1392,6 +1400,179 @@ class ContentTree:
             if not self._ak_saved:
                 return
             self._ak_saved.clear()
+        self.bump_update_id()
+
+
+    # ---------- история поиска: сколько показывать и хранить на диске ----------
+
+    def search_cfg(self) -> dict:
+        try:
+            raw = (self.search_cfg_fn() if self.search_cfg_fn else None) or {}
+        except Exception:  # noqa: BLE001
+            raw = {}
+        v = raw.get("persist", False)
+        persist = v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
+        try:
+            show = int(raw.get("history_show", SEARCH_HISTORY_SHOW_DEFAULT))
+        except (TypeError, ValueError):
+            show = SEARCH_HISTORY_SHOW_DEFAULT
+        return {"persist": persist, "history_show": max(1, min(50, show))}
+
+    def _hist(self, lst: List[dict], lock=None) -> List[dict]:
+        """Последние N записей истории поиска (N — настройка «показывать в истории»)."""
+        n = self.search_cfg()["history_show"]
+        if lock is not None:
+            with lock:
+                return list(lst)[-n:]
+        return list(lst)[-n:]
+
+    _HIST_ATTRS = {
+        "deezer": "_saved", "drivemusic": "_dm_saved", "yandex": "_ya_saved", "zvuk": "_zv_saved",
+        "kion": "_kion_saved", "akniga": "_ak_saved", "promodj": "_pd_saved", "zaycev": "_zy_saved",
+    }
+
+    def save_search_history(self) -> None:
+        """Записать историю поиска на диск — только если включено «сохранять после перезагрузки»."""
+        path = self._search_hist_path
+        if not path or not self.search_cfg()["persist"]:
+            return
+        data: Dict[str, List[dict]] = {}
+        for site, attr in self._HIST_ATTRS.items():
+            with getattr(self, attr + "_lock"):
+                data[site] = list(getattr(self, attr))
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=1)
+            os.replace(tmp, path)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Не удалось сохранить историю поиска в %s: %s", path, e)
+
+    def load_search_history(self) -> None:
+        path = self._search_hist_path
+        if not path or not self.search_cfg()["persist"] or not os.path.isfile(path):
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                return
+            n = 0
+            for site, attr in self._HIST_ATTRS.items():
+                items = [x for x in (data.get(site) or []) if isinstance(x, dict) and x.get("id")]
+                with getattr(self, attr + "_lock"):
+                    lst = getattr(self, attr)
+                    have = {x.get("id") for x in lst}
+                    lst[:0] = [x for x in items if x.get("id") not in have][-SAVED_LIMIT:]
+                    del lst[:-SAVED_LIMIT]
+                n += len(items)
+            log.info("История поиска загружена: %d записей из %s", n, path)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Не удалось загрузить историю поиска из %s: %s", path, e)
+
+    def delete_search_history_file(self) -> None:
+        try:
+            if self._search_hist_path and os.path.isfile(self._search_hist_path):
+                os.remove(self._search_hist_path)
+        except OSError:
+            pass
+
+    # ---------- «Избранное» остальных площадок (до 500 на площадку) ----------
+
+    FAV_SITES = ("deezer", "drivemusic", "yandex", "zvuk", "kion", "zaycev", "promodj")
+
+    @staticmethod
+    def _fav_item(site: str, stype: str, ident: str, title: str, query: str) -> Optional[dict]:
+        ident = str(ident or "").strip()
+        if not ident:
+            return None
+        stype = stype if stype in ("artist", "album", "playlist") else "artist"
+        if site == "deezer":
+            sid, key = ("a" if stype == "artist" else "b") + ident, stype + "_id"
+        elif site == "drivemusic":
+            stype, sid, key = "artist", "dma" + ident, "artist_id"
+        elif site == "yandex":
+            sid, key = f"ya-{stype}-{ident}", stype + "_id"
+        elif site == "kion":
+            sid, key = f"kion-{stype}-{ident}", stype + "_id"
+        elif site == "zvuk":
+            sid, key = f"zv-{stype}-{ident}", stype + "_id"
+        elif site == "zaycev":
+            stype, sid, key = "artist", "zy-artist-" + ident, "artist_id"
+        elif site == "promodj":
+            return {"id": ident, "type": "artist", "slug": ident, "title": title or ident, "query": query}
+        else:
+            return None
+        return {"id": sid, "title": title or ident, "type": stype, key: ident, "query": query}
+
+    def site_favorites(self, site: str) -> List[dict]:
+        with self._site_favs_lock:
+            return list(self._site_favs.get(site, []))
+
+    def _load_site_favorites(self) -> None:
+        path = self._site_favs_path
+        if not path or not os.path.isfile(path):
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                for site in self.FAV_SITES:
+                    items = [x for x in (data.get(site) or []) if isinstance(x, dict) and x.get("id")]
+                    self._site_favs[site] = items[:SITE_FAVORITES_LIMIT]
+                log.info("Избранное площадок загружено: %s",
+                         ", ".join(f"{k}={len(v)}" for k, v in self._site_favs.items() if v) or "пусто")
+        except Exception as e:  # noqa: BLE001
+            log.warning("Не удалось загрузить избранное из %s: %s", path, e)
+
+    def _save_site_favorites(self) -> None:
+        path = self._site_favs_path
+        if not path:
+            return
+        try:
+            with self._site_favs_lock:
+                data = {k: list(v) for k, v in self._site_favs.items()}
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=1)
+            os.replace(tmp, path)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Не удалось сохранить избранное в %s: %s", path, e)
+
+    def add_site_favorite(self, site: str, stype: str, ident: str, title: str, query: str = "") -> str:
+        """'ok' / 'exists' / 'limit' / 'empty' / 'unsupported'. Лимит — SITE_FAVORITES_LIMIT на площадку."""
+        if site not in self.FAV_SITES:
+            return "unsupported"
+        item = self._fav_item(site, stype, ident, title, query)
+        if item is None:
+            return "empty"
+        with self._site_favs_lock:
+            lst = self._site_favs.setdefault(site, [])
+            if any(x.get("id") == item["id"] for x in lst):
+                return "exists"
+            if len(lst) >= SITE_FAVORITES_LIMIT:
+                return "limit"
+            lst.append(item)
+        self._save_site_favorites()
+        self.bump_update_id()
+        return "ok"
+
+    def remove_site_favorite(self, site: str, sid: str) -> None:
+        with self._site_favs_lock:
+            lst = self._site_favs.get(site, [])
+            before = len(lst)
+            lst[:] = [x for x in lst if x.get("id") != sid]
+            changed = len(lst) != before
+        if changed:
+            self._save_site_favorites()
+            self.bump_update_id()
+
+    def clear_site_favorites(self, site: str) -> None:
+        with self._site_favs_lock:
+            if not self._site_favs.get(site):
+                return
+            self._site_favs[site] = []
+        self._save_site_favorites()
         self.bump_update_id()
 
     # ---------- «Избранное» (отдельный конфиг, до 500 книг) ----------
@@ -1496,7 +1677,7 @@ class ContentTree:
 
     def ya_saved_searches(self) -> List[dict]:
         with self._ya_saved_lock:
-            return list(self._ya_saved)
+            return self._hist(self._ya_saved)
 
     def add_ya_saved_artist(self, artist_id: str, name: str, query: str = "") -> None:
         with self._ya_saved_lock:
@@ -1538,7 +1719,7 @@ class ContentTree:
 
     def kion_saved_searches(self) -> List[dict]:
         with self._kion_saved_lock:
-            return list(self._kion_saved)
+            return self._hist(self._kion_saved)
 
     def add_kion_saved_artist(self, artist_id: str, name: str, query: str = "") -> None:
         with self._kion_saved_lock:
@@ -1581,7 +1762,7 @@ class ContentTree:
 
     def zv_saved_searches(self) -> List[dict]:
         with self._zv_saved_lock:
-            return list(self._zv_saved)
+            return self._hist(self._zv_saved)
 
     def add_zv_saved_artist(self, artist_id: str, name: str, query: str = "") -> None:
         with self._zv_saved_lock:
@@ -1639,7 +1820,7 @@ class ContentTree:
 
     def pd_saved_searches(self) -> List[dict]:
         with self._pd_saved_lock:
-            return list(self._pd_saved)
+            return self._hist(self._pd_saved)
 
     def add_pd_saved_artist(self, slug: str, name: str, query: str = "") -> None:
         slug = (slug or "").strip()
@@ -1674,7 +1855,7 @@ class ContentTree:
 
     def zy_saved_searches(self) -> List[dict]:
         with self._zy_saved_lock:
-            return list(self._zy_saved)
+            return self._hist(self._zy_saved)
 
     def add_zy_saved_artist(self, artist_id: str, name: str, query: str = "") -> None:
         artist_id = str(artist_id or "").strip()
@@ -2207,6 +2388,17 @@ class ContentTree:
         album: str = "",
     ) -> str:
         oid, parent, url = self._acc_id(oid), self._acc_id(parent), self._acc_url(url)
+        # исполнитель/длительность для статистики прослушивания
+        try:
+            if "/stream/" in url:
+                from . import stats as _stats
+                _st = _stats.get_stats()
+                if _st is not None:
+                    _rest = url.split("/stream/", 1)[1].split("?")[0].split("/")
+                    if _rest[0] in ("deezer", "yandex", "kion", "zvuk", "drivemusic", "promodj", "zaycev") and _rest[-1]:
+                        _st.meta(_rest[0], _rest[-1], artist, title, duration)
+        except Exception:
+            pass
         if duration and duration > 0:
             h = duration // 3600
             m = (duration % 3600) // 60

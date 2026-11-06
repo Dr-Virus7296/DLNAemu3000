@@ -38,6 +38,9 @@ _TRACE_CFG = {"enabled": True, "covers": False}
 ACTIVE_CLIENTS: dict = {}
 _ACTIVE_LOCK = __import__("threading").Lock()
 _ACTIVE_TTL = 300  # сек без активного потока
+# Поток запроса: HEAD не считаем прослушиванием; stats.conn_end — только если
+# этот запрос действительно начал сессию (404/пробы не должны закрывать чужую).
+_REQ = __import__("threading").local()
 _KEEPALIVE_INTERVAL = 30
 _KEEPALIVE_STARTED = False
 
@@ -87,9 +90,19 @@ def radio_is_playing(pid: str, index: int) -> bool:
 
 
 def update_active_client(ip: str, service: str, title: str, track_id: str = "",
-                         cover: str = "", streaming: bool = True) -> None:
+                         cover: str = "", streaming: bool = True,
+                         path: str = "", station_url: str = "") -> None:
     if not ip:
         return
+    try:
+        if not getattr(_REQ, "head", False):
+            from . import stats as _stats
+            st = _stats.get_stats()
+            if st is not None:
+                st.start(ip, service, title, track_id, path=path, station_url=station_url)
+                _REQ.started = True
+    except Exception as e:  # noqa: BLE001
+        log.debug("stats.start: %s", e)
     if service != "radio":
         with _ACTIVE_LOCK:
             RADIO_PLAYING.pop(ip, None)
@@ -110,6 +123,15 @@ def update_active_client(ip: str, service: str, title: str, track_id: str = "",
 def end_active_stream(ip: str) -> None:
     if not ip:
         return
+    try:
+        if getattr(_REQ, "started", False):
+            from . import stats as _stats
+            st = _stats.get_stats()
+            if st is not None:
+                st.conn_end(ip)
+            _REQ.started = False
+    except Exception as e:  # noqa: BLE001
+        log.debug("stats.conn_end: %s", e)
     with _ACTIVE_LOCK:
         info = ACTIVE_CLIENTS.get(ip)
         if info:
@@ -333,6 +355,8 @@ class DLNAHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         client_ip = self.client_address[0] if self.client_address else ""
         is_stream = (not head_only) and path.startswith("/stream/")
+        _REQ.head = bool(head_only)
+        _REQ.started = False
         try:
             return self._do_GET_impl(head_only=head_only)
         finally:
@@ -596,9 +620,15 @@ class DLNAHandler(BaseHTTPRequestHandler):
             return
         try:
             client_ip = self.client_address[0] if self.client_address else ""
-            update_active_client(client_ip, "radio", st.name, f"radio:{pid}:{index}")
+            update_active_client(client_ip, "radio", st.name, f"radio:{pid}:{index}",
+                                 station_url=st.url)
             with _ACTIVE_LOCK:
                 RADIO_PLAYING[client_ip] = (pid, index, time.time())
+            if self.command != "HEAD":
+                from . import stats as _stats
+                rh = _stats.get_radio_history()
+                if rh is not None:
+                    rh.touch(st.url, st.name)
         except Exception:
             pass
         if getattr(radio, "proxy", True) and self._proxy_radio(st):
@@ -1801,7 +1831,7 @@ class DLNAHandler(BaseHTTPRequestHandler):
                 cover = ""
             update_active_client(
                 client_ip, svc, title, track_id=str(path.name),
-                cover=cover,
+                cover=cover, path=str(path),
             )
             size = path.stat().st_size
             mime = mime_for(str(path))
@@ -1830,12 +1860,24 @@ class DLNAHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 if self.command == "HEAD":
                     return
-                with open(path, "rb") as f:
-                    while True:
-                        chunk = f.read(64 * 1024)
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
+                sent = 0
+                try:
+                    with open(path, "rb") as f:
+                        while True:
+                            chunk = f.read(64 * 1024)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            sent += len(chunk)
+                finally:
+                    # сколько реально отдано: по этому видно, докуда дослушал (пауза/стоп не накручивают время)
+                    try:
+                        from . import stats as _stats
+                        _st = _stats.get_stats()
+                        if _st is not None and client_ip:
+                            _st.progress(client_ip, sent, size)
+                    except Exception:
+                        pass
                 return
 
             rng = self._parse_range(size)
@@ -2481,6 +2523,17 @@ def run_server(cfg: dict, config_path: str = "config.yaml") -> None:
         covers_dlna_profile=bool(covers_profile),
         favorites_path=fav_path,
     )
+    # История поиска: настройки живут в cfg["search"] (веб-панель → «Поиск»)
+    def _search_cfg() -> dict:
+        try:
+            from . import webui as _w
+            c = _w._cfg() or cfg
+        except Exception:  # noqa: BLE001
+            c = cfg
+        return c.get("search") or {}
+
+    tree.search_cfg_fn = _search_cfg
+    tree.load_search_history()
     # Настройки «Текущего плейлиста» (веб-панель → «Текущие плейлисты»)
     try:
         _cp = cfg.get("current_playlists") or {}
@@ -2565,6 +2618,27 @@ def run_server(cfg: dict, config_path: str = "config.yaml") -> None:
     ssdp.start()
 
     web_httpd = None
+    # статистика прослушивания и история эфира радио (файлы лежат рядом с config.yaml)
+    try:
+        from . import stats as _stats
+        _stats.init(os.path.dirname(os.path.abspath(config_path)) or ".")
+        radio_proxy.ON_TITLE = lambda url, t: (
+            _stats.get_radio_history().title(url, t) if _stats.get_radio_history() else None
+        )
+
+        def _stats_settings() -> dict:
+            try:
+                from . import webui as _w
+                c = _w._cfg() or cfg
+            except Exception:
+                c = cfg
+            return c.get("stats") or {}
+
+        _stats.get_stats().settings_fn = _stats_settings
+        _stats.get_stats().start_auto_scheduler(lambda: getattr(tree, "files", None), _stats_settings)
+    except Exception as e:  # noqa: BLE001
+        log.warning("stats: %s", e)
+
     if web_enabled and web_port and web_port != port:
         from . import webui
         webui.set_state(
@@ -2614,10 +2688,27 @@ def run_server(cfg: dict, config_path: str = "config.yaml") -> None:
         " (+covers)" if _TRACE_CFG["covers"] else "",
     )
     try:
+        import signal as _signal
+
+        def _on_term(signum, frame):
+            raise KeyboardInterrupt()
+
+        _signal.signal(_signal.SIGTERM, _on_term)   # stop из init-скрипта → корректное завершение
+    except Exception:
+        pass
+    try:
         httpd.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         log.info("stopping…")
     finally:
+        try:
+            from . import stats as _stats
+            if _stats.get_stats():
+                _stats.get_stats().flush_all()
+            if _stats.get_radio_history():
+                _stats.get_radio_history().flush()
+        except Exception:
+            pass
         ssdp.stop()
         if web_httpd:
             try:

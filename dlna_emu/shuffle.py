@@ -45,7 +45,10 @@ def artist_from_name(name: str) -> str:
     n = _NUM_PREFIX_RE.sub("", name or "").strip()
     parts = _SEP_RE.split(n, maxsplit=1)
     if len(parts) == 2 and parts[0].strip() and parts[1].strip():
-        return parts[0].strip()
+        a = parts[0].strip()
+        if re.fullmatch(r"[\d\s.\-_#№]+", a):      # «2019 - Название», «05 - Название»
+            return ""
+        return a
     return ""
 
 
@@ -70,18 +73,20 @@ def _synchsafe(b: bytes) -> int:
     return (b[0] << 21) | (b[1] << 14) | (b[2] << 7) | b[3]
 
 
-def _artist_mp3(path: str) -> str:
+def _tags_mp3(path: str) -> Tuple[str, str]:
+    """(исполнитель, название) из ID3v2."""
     with open(path, "rb") as f:
         head = f.read(10)
         if len(head) < 10 or head[:3] != b"ID3":
-            return ""
+            return "", ""
         ver = head[3]
         total = _synchsafe(head[6:10])
         v2 = ver == 2
         hlen = 6 if v2 else 10
         pos = 0
-        found = {}
-        while pos + hlen <= total and len(found) < 2:
+        found: Dict[bytes, str] = {}
+        want = (b"TPE1", b"TP1", b"TPE2", b"TP2", b"TIT2", b"TT2")
+        while pos + hlen <= total:
             f.seek(10 + pos)
             h = f.read(hlen)
             if len(h) < hlen or h[0:1] == b"\x00":
@@ -94,18 +99,21 @@ def _artist_mp3(path: str) -> str:
                 size = _synchsafe(h[4:8]) if ver == 4 else struct.unpack(">I", h[4:8])[0]
             if size <= 0 or pos + hlen + size > total:
                 break
-            if fid in (b"TPE1", b"TP1", b"TPE2", b"TP2") and size < 4096:
+            if fid in want and size < 4096:
                 body = f.read(size)
                 if body:
-                    found[fid[:3] if v2 else fid] = _decode_text(body[0], body[1:]).strip("\x00 ")
+                    found[fid] = _decode_text(body[0], body[1:]).strip("\x00 ")
             pos += hlen + size
+        artist = ""
         for key in (b"TPE1", b"TP1", b"TPE2", b"TP2"):
             if found.get(key):
-                return found[key].split("\x00")[0].strip()
-    return ""
+                artist = found[key].split("\x00")[0].strip()
+                break
+        title = (found.get(b"TIT2") or found.get(b"TT2") or "").split("\x00")[0].strip()
+        return artist, title
 
 
-def _artist_flac(path: str) -> str:
+def _tags_flac(path: str) -> Tuple[str, str]:
     with open(path, "rb") as f:
         head = f.read(10)
         skip = 0
@@ -113,11 +121,11 @@ def _artist_flac(path: str) -> str:
             skip = 10 + _synchsafe(head[6:10])
         f.seek(skip)
         if f.read(4) != b"fLaC":
-            return ""
+            return "", ""
         while True:
             h = f.read(4)
             if len(h) < 4:
-                return ""
+                return "", ""
             last = bool(h[0] & 0x80)
             btype = h[0] & 0x7F
             blen = (h[1] << 16) | (h[2] << 8) | h[3]
@@ -135,30 +143,32 @@ def _artist_flac(path: str) -> str:
                     if "=" in item:
                         k, v = item.split("=", 1)
                         tags.setdefault(k.upper(), v)
-                return (tags.get("ARTIST") or tags.get("ALBUMARTIST") or "").strip()
+                return ((tags.get("ARTIST") or tags.get("ALBUMARTIST") or "").strip(),
+                        (tags.get("TITLE") or "").strip())
             f.seek(blen, 1)
             if last:
-                return ""
+                return "", ""
 
 
-_TAG_CACHE: Dict[Tuple[str, float], str] = {}
+_TAG_CACHE: Dict[Tuple[str, float], Tuple[str, str]] = {}
 
 
-def artist_from_tags(path: str) -> str:
+def read_tags(path: str) -> Tuple[str, str]:
+    """(исполнитель, название) из тегов файла (MP3/FLAC); ('', '') — тегов нет."""
     try:
         key = (path, os.stat(path).st_mtime)
     except OSError:
-        return ""
+        return "", ""
     hit = _TAG_CACHE.get(key)
     if hit is not None:
         return hit
     ext = os.path.splitext(path)[1].lower()
-    val = ""
+    val: Tuple[str, str] = ("", "")
     try:
         if ext == ".mp3":
-            val = _artist_mp3(path)
+            val = _tags_mp3(path)
         elif ext == ".flac":
-            val = _artist_flac(path)
+            val = _tags_flac(path)
     except Exception as e:
         log.debug("tags %s: %s", path, e)
     if len(_TAG_CACHE) > 20000:
@@ -167,11 +177,14 @@ def artist_from_tags(path: str) -> str:
     return val
 
 
+def artist_from_tags(path: str) -> str:
+    return read_tags(path)[0]
+
+
 def artists_for(name: str, path: str) -> Set[str]:
     """Множество исполнителей трека: имя → теги. Пусто — исполнитель неизвестен."""
-    raw = artist_from_name(name) or artist_from_name(os.path.splitext(os.path.basename(path))[0])
-    if not raw:
-        raw = artist_from_tags(path)
+    raw = artist_from_tags(path) or artist_from_name(name) \
+        or artist_from_name(os.path.splitext(os.path.basename(path))[0])
     return split_artists(raw)
 
 

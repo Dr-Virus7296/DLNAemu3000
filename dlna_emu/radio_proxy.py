@@ -122,17 +122,28 @@ def _live_close(key: str) -> None:
             e["ts"] = time.time()
 
 
+# Хук для истории эфира: ON_TITLE(url_станции, название) при смене трека
+ON_TITLE: Optional[Callable[[str, str], None]] = None
+
+
 def _live_set(key: str, meta: bytes) -> None:
     m = _TITLE_RE.search(meta)
     if not m:
         return
     text = _decode(m.group(1) if m.group(1) is not None else m.group(2)).strip("\x00 ")
     title = "" if _JUNK.match(text) else text
+    changed = False
     with _LIVE_LOCK:
         e = _LIVE.get(key)
         if e is not None:
+            changed = bool(title) and e.get("title") != title
             e["title"] = title
             e["ts"] = time.time()
+    if changed and ON_TITLE is not None:
+        try:
+            ON_TITLE(key, title)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 class _IcyParser:
