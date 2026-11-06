@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
 import html
 import json
 import logging
@@ -136,6 +138,10 @@ class ContentTree:
         # Последний просмотренный список треков (только RAM) — чтобы при play
         # сохранить подборку. Browse НЕ пишет на диск и НЕ меняет UpdateID.
         self._last_browsed: Dict[str, dict] = {}
+        # (сервис, id трека) → «Исполнитель — Название» для всех когда-либо показанных треков
+        # (нужен «Устройствам онлайн», когда трека нет в сохранённых подборках)
+        self._track_labels: "OrderedDict[Tuple[str, str], str]" = OrderedDict()
+        self._track_labels_lock = threading.Lock()
         # Замороженный список треков для «Текущий плейлист»:
         # key = "service:fid" -> list[dict] (отрезок с текущей позиции).
         # При первом Browse берём tracks[start_index:], дальше список
@@ -1136,8 +1142,36 @@ class ContentTree:
 
         threading.Thread(target=work, name="dm-refresh", daemon=True).start()
 
+    def remember_track_label(self, service: str, track_id: str, artist: str = "", title: str = "") -> None:
+        """Запомнить подпись трека «Исполнитель — Название»."""
+        title = (title or "").strip()
+        artist = (artist or "").strip()
+        if not service or not track_id or not title:
+            return
+        label = title
+        if artist and artist.lower() not in title.lower():
+            label = f"{artist} — {title}"
+        key = (service, str(track_id))
+        with self._track_labels_lock:
+            self._track_labels[key] = label
+            self._track_labels.move_to_end(key)
+            while len(self._track_labels) > 20000:
+                self._track_labels.popitem(last=False)
+
+    def known_track_label(self, service: str, track_id: str) -> str:
+        with self._track_labels_lock:
+            return self._track_labels.get((service, str(track_id)), "")
+
     def resolve_track_title(self, service: str, track_oid: str) -> str:
-        """Найти artist — title по oid среди текущих подборок (все IP)."""
+        """Найти artist — title по oid: сначала среди текущих подборок (все IP),
+        затем среди всех когда-либо показанных треков."""
+        plain_service = service
+        res = self._resolve_track_title_current(service, track_oid)
+        if res:
+            return res
+        return self.known_track_label(plain_service, (track_oid or "").rsplit(":", 1)[-1])
+
+    def _resolve_track_title_current(self, service: str, track_oid: str) -> str:
         if not track_oid:
             return ""
         service = self._svc_key(service)
@@ -2388,6 +2422,14 @@ class ContentTree:
         album: str = "",
     ) -> str:
         oid, parent, url = self._acc_id(oid), self._acc_id(parent), self._acc_url(url)
+        # подпись «исполнитель — название» для «Устройств онлайн»
+        try:
+            if "/stream/" in url:
+                _r = url.split("/stream/", 1)[1].split("?")[0].split("/")
+                if _r[0] in ("deezer", "yandex", "kion", "zvuk", "drivemusic", "promodj", "zaycev") and _r[-1]:
+                    self.remember_track_label(_r[0], _r[-1], artist, title)
+        except Exception:
+            pass
         # исполнитель/длительность для статистики прослушивания
         try:
             if "/stream/" in url:

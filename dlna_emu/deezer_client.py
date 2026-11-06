@@ -191,6 +191,23 @@ class DeezerClient:
         log.info("Deezer playlists: %d", len(playlists))
         return playlists
 
+    def get_track_meta(self, track_id: str) -> Optional[DzTrack]:
+        """Название/исполнитель одного трека (публичный API, без авторизации)."""
+        try:
+            r = self.session.get(f"{API}/track/{track_id}", timeout=5)
+            d = r.json() if r.ok else {}
+        except Exception:
+            return None
+        if not isinstance(d, dict) or not d.get("title"):
+            return None
+        return DzTrack(
+            id=str(track_id),
+            title=d.get("title") or "",
+            artist=((d.get("artist") or {}).get("name") or ""),
+            duration=int(d.get("duration") or 0),
+            album=((d.get("album") or {}).get("title") or ""),
+        )
+
     def get_tracks(self, playlist_id: str) -> List[DzTrack]:
         if not self.ensure_login():
             return []

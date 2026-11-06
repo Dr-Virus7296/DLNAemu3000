@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import socket
+import threading
 import time
 import traceback
 import uuid as uuid_lib
@@ -87,6 +88,13 @@ def radio_is_playing(pid: str, index: int) -> bool:
             elif p == pid and i == index:
                 return True
     return False
+
+
+def _safe(fn):
+    try:
+        fn()
+    except Exception as e:  # noqa: BLE001
+        log.debug("title fetch: %s", e)
 
 
 def update_active_client(ip: str, service: str, title: str, track_id: str = "",
@@ -715,7 +723,53 @@ class DLNAHandler(BaseHTTPRequestHandler):
             deezer.ensure_flow_index(config_id, index + 3)
         except Exception:
             pass
+        try:
+            _t = getattr(self.server, "tree", None)
+            if _t is not None:
+                _t.remember_track_label("deezer", tr.id, tr.artist, tr.title)
+        except Exception:
+            pass
         self._stream_deezer(tr.id)
+
+    def _resolve_active_title(self, service: str, track_id: str, oid: str, prefix: str) -> str:
+        """«Исполнитель — Название» для «Устройств онлайн».
+
+        Сначала подборки/кэш показанных треков, затем разовый запрос метаданных
+        к самой площадке (не дольше ~2.5 с, чтобы не задерживать старт воспроизведения).
+        Если ничего не нашли — «<площадка> <id>»."""
+        tree = getattr(self.server, "tree", None)
+        title = ""
+        try:
+            if tree and hasattr(tree, "resolve_track_title"):
+                title = tree.resolve_track_title(service, oid) or ""
+        except Exception:
+            title = ""
+        if title:
+            return title
+
+        client = getattr(self.server, service, None)
+
+        def fetch():
+            tr = None
+            if service == "deezer" and hasattr(client, "get_track_meta"):
+                tr = client.get_track_meta(track_id)
+            elif service in ("yandex", "kion") and hasattr(client, "_tracks_by_ids"):
+                tr = (client._tracks_by_ids([track_id]) or {}).get(str(track_id))
+            elif service == "zvuk" and hasattr(client, "get_tracks_by_ids"):
+                lst = client.get_tracks_by_ids([track_id]) or []
+                tr = next((t for t in lst if str(getattr(t, "id", "")) == str(track_id)), None) or (lst[0] if lst else None)
+            if tr is not None and getattr(tr, "title", "") and tree is not None:
+                tree.remember_track_label(service, track_id, getattr(tr, "artist", "") or "", tr.title)
+
+        if client is not None and tree is not None:
+            th = threading.Thread(target=lambda: _safe(fetch), name="title-fetch", daemon=True)
+            th.start()
+            th.join(2.5)
+            try:
+                title = tree.known_track_label(service, track_id)
+            except Exception:
+                title = ""
+        return title or f"{prefix} {track_id}"
 
     def _stream_deezer(self, track_id: str):
         deezer: DeezerClient = self.server.deezer  # type: ignore
@@ -727,11 +781,7 @@ class DLNAHandler(BaseHTTPRequestHandler):
             client_ip = self.client_address[0] if self.client_address else ""
             oid = f"deezer:tr:{track_id}"
             tree = getattr(self.server, "tree", None)
-            title = ""
-            if tree and hasattr(tree, "resolve_track_title"):
-                title = tree.resolve_track_title("deezer", oid) or ""
-            if not title:
-                title = f"Deezer {track_id}"
+            title = self._resolve_active_title("deezer", track_id, oid, "Deezer")
             update_active_client(client_ip, "deezer", title, track_id)
             if tree and hasattr(tree, "advance_current"):
                 tree.advance_current("deezer", oid, client_ip=client_ip)
@@ -815,11 +865,7 @@ class DLNAHandler(BaseHTTPRequestHandler):
             client_ip = self.client_address[0] if self.client_address else ""
             oid = f"drivemusic:tr:{track_id}"
             tree = getattr(self.server, "tree", None)
-            title = ""
-            if tree and hasattr(tree, "resolve_track_title"):
-                title = tree.resolve_track_title("drivemusic", oid) or ""
-            if not title:
-                title = f"DriveMusic {track_id}"
+            title = self._resolve_active_title("drivemusic", track_id, oid, "DriveMusic")
             update_active_client(client_ip, "drivemusic", title, track_id)
             if tree and hasattr(tree, "advance_current"):
                 tree.advance_current("drivemusic", oid, client_ip=client_ip)
@@ -900,7 +946,12 @@ class DLNAHandler(BaseHTTPRequestHandler):
             return
         try:
             client_ip = self.client_address[0] if self.client_address else ""
-            update_active_client(client_ip, "akniga", f"book {bid}", bid)
+            _book = None
+            try:
+                _book, _ = ak.find_chapter(bid, 0)
+            except Exception:
+                _book = None
+            update_active_client(client_ip, "akniga", (getattr(_book, "title", "") or f"book {bid}"), bid)
             tree = getattr(self.server, "tree", None)
             if tree and hasattr(tree, "advance_current"):
                 tree.advance_current("akniga", f"akniga:ch:{bid}:all", client_ip=client_ip)
@@ -949,6 +1000,9 @@ class DLNAHandler(BaseHTTPRequestHandler):
         try:
             client_ip = self.client_address[0] if self.client_address else ""
             ch_title = (getattr(ch, "title", None) if ch else None) or f"Глава {index + 1}"
+            _bt = (getattr(book, "title", "") or "").strip() if book else ""
+            if _bt and _bt.lower() not in ch_title.lower():
+                ch_title = f"{_bt} — {ch_title}"
             update_active_client(client_ip, "akniga", ch_title, f"{bid}:{index}")
             tree = getattr(self.server, "tree", None)
             if tree and hasattr(tree, "advance_current"):
@@ -1114,11 +1168,7 @@ class DLNAHandler(BaseHTTPRequestHandler):
             client_ip = self.client_address[0] if self.client_address else ""
             oid = f"yandex:tr:{track_id}"
             tree = getattr(self.server, "tree", None)
-            title = ""
-            if tree and hasattr(tree, "resolve_track_title"):
-                title = tree.resolve_track_title("yandex", oid) or ""
-            if not title:
-                title = f"Яндекс {track_id}"
+            title = self._resolve_active_title("yandex", track_id, oid, "Яндекс")
             update_active_client(client_ip, "yandex", title, track_id)
             if tree and hasattr(tree, "advance_current"):
                 tree.advance_current("yandex", oid, client_ip=client_ip)
@@ -1237,11 +1287,7 @@ class DLNAHandler(BaseHTTPRequestHandler):
             client_ip = self.client_address[0] if self.client_address else ""
             oid = f"kion:tr:{track_id}"
             tree = getattr(self.server, "tree", None)
-            title = ""
-            if tree and hasattr(tree, "resolve_track_title"):
-                title = tree.resolve_track_title("kion", oid) or ""
-            if not title:
-                title = f"КИОН {track_id}"
+            title = self._resolve_active_title("kion", track_id, oid, "КИОН")
             update_active_client(client_ip, "kion", title, track_id)
             if tree and hasattr(tree, "advance_current"):
                 tree.advance_current("kion", oid, client_ip=client_ip)
@@ -1353,11 +1399,7 @@ class DLNAHandler(BaseHTTPRequestHandler):
             client_ip = self.client_address[0] if self.client_address else ""
             oid = f"zvuk:tr:{track_id}"
             tree = getattr(self.server, "tree", None)
-            title = ""
-            if tree and hasattr(tree, "resolve_track_title"):
-                title = tree.resolve_track_title("zvuk", oid) or ""
-            if not title:
-                title = f"Звук {track_id}"
+            title = self._resolve_active_title("zvuk", track_id, oid, "Звук")
             update_active_client(client_ip, "zvuk", title, track_id)
             if tree and hasattr(tree, "advance_current"):
                 tree.advance_current("zvuk", oid, client_ip=client_ip)
@@ -1495,11 +1537,7 @@ class DLNAHandler(BaseHTTPRequestHandler):
             client_ip = self.client_address[0] if self.client_address else ""
             oid = f"promodj:tr:{track_id}"
             tree = getattr(self.server, "tree", None)
-            title = ""
-            if tree and hasattr(tree, "resolve_track_title"):
-                title = tree.resolve_track_title("promodj", oid) or ""
-            if not title:
-                title = f"PromoDJ {track_id}"
+            title = self._resolve_active_title("promodj", track_id, oid, "PromoDJ")
             update_active_client(client_ip, "promodj", title, track_id)
             if tree and hasattr(tree, "advance_current"):
                 tree.advance_current("promodj", oid, client_ip=client_ip)
@@ -1600,11 +1638,7 @@ class DLNAHandler(BaseHTTPRequestHandler):
             client_ip = self.client_address[0] if self.client_address else ""
             oid = f"zaycev:tr:{track_id}"
             tree = getattr(self.server, "tree", None)
-            title = ""
-            if tree and hasattr(tree, "resolve_track_title"):
-                title = tree.resolve_track_title("zaycev", oid) or ""
-            if not title:
-                title = f"Zaycev {track_id}"
+            title = self._resolve_active_title("zaycev", track_id, oid, "Zaycev")
             update_active_client(client_ip, "zaycev", title, track_id)
             # возобновляемый «Текущий плейлист»: запоминаем подборку и позицию
             if tree and hasattr(tree, "advance_current"):
