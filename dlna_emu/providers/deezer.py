@@ -22,6 +22,7 @@ class DeezerProvider(ServiceProvider):
             items.extend([
                 self.t._container(DZ_SAVED, DEEZER, "🔍 Мои поиски",
                                 len(self.t.saved_searches())),
+                self.t._container(DZ_FAV, DEEZER, "⭐ Избранное", len(self.t.site_favorites("deezer"))),
                 self.t._container(DZ_FLOW, DEEZER, "Flow", 2),
                 self.t._container(DZ_MINE, DEEZER, "Мои плейлисты", 0),
                 self.t._container(DZ_EXPLORE, DEEZER, "Подборки", 0),
@@ -60,22 +61,22 @@ class DeezerProvider(ServiceProvider):
         if object_id.startswith("deezer:flowcfg:"):
             return []
 
-        if object_id == DZ_SAVED:
-            with self.t._saved_lock:
-                saved = list(self.t._saved)
+        if object_id in (DZ_SAVED, DZ_FAV):
+            saved = (self.t.site_favorites("deezer") if object_id == DZ_FAV
+                     else self.t._hist(self.t._saved, self.t._saved_lock))
             out = []
             for s in saved:
                 if s["type"] == "artist":
                     out.append(self.t._container(
                         f"deezer:saved:artist:{s['artist_id']}",
-                        DZ_SAVED,
+                        object_id,
                         f"👤 {s['title']}",
                         0,
                     ))
                 elif s["type"] == "album":
                     out.append(self.t._container(
                         f"deezer:saved:album:{s['album_id']}",
-                        DZ_SAVED,
+                        object_id,
                         f"💿 {s['title']}",
                         0,
                     ))

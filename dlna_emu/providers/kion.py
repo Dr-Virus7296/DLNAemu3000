@@ -33,6 +33,7 @@ class KionProvider(ServiceProvider):
                 self.t._container(KION_PODCASTS, KION, "Подкасты", 50),
                 self.t._container(KION_SAVED, KION, "🔍 Мои поиски",
                                 len(self.t.kion_saved_searches())),
+                self.t._container(KION_FAV, KION, "⭐ Избранное", len(self.t.site_favorites("kion"))),
                 self.t._container(KION_WAVE, KION, "🌊 Моя волна", FLOW_MAX_CACHE),
                 self.t._container(KION_CATALOG, KION, "📂 Каталог", n_sec),
             ])
@@ -267,22 +268,22 @@ class KionProvider(ServiceProvider):
             self._kion_cache_current(pl_title, tracks)
             return out
 
-        if object_id == KION_SAVED:
-            with self.t._kion_saved_lock:
-                saved = list(self.t._kion_saved)
+        if object_id in (KION_SAVED, KION_FAV):
+            saved = (self.t.site_favorites("kion") if object_id == KION_FAV
+                     else self.t._hist(self.t._kion_saved, self.t._kion_saved_lock))
             out = []
             for s in saved:
                 if s.get("type") == "artist":
                     out.append(self.t._container(
                         f"{KION_ARTIST_PREFIX}{s['artist_id']}",
-                        KION_SAVED,
+                        object_id,
                         f"👤 {s['title']}",
                         0,
                     ))
                 elif s.get("type") == "album":
                     out.append(self.t._container(
                         f"{KION_ALBUM_PREFIX}{s['album_id']}",
-                        KION_SAVED,
+                        object_id,
                         f"💿 {s['title']}",
                         0,
                     ))

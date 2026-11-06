@@ -58,6 +58,7 @@ class ZaycevProvider(ServiceProvider):
                 items.append(t._container("zaycev:current", ZAYCEV, "* Текущий плейлист", n_cur))
             items.extend([
                 t._container(ZY_SAVED, ZAYCEV, "🔍 Мои поиски", len(t.zy_saved_searches())),
+                t._container(ZY_FAV, ZAYCEV, "⭐ Избранное", len(t.site_favorites("zaycev"))),
                 t._container(ZY_NEW, ZAYCEV, "🆕 Новинки", 0),
                 t._container(ZY_TOP, ZAYCEV, "🏆 Топ Zaycev.net", len(TOP_PERIODS)),
                 t._container(ZY_GENRES, ZAYCEV, "Жанры", 0),
@@ -69,12 +70,13 @@ class ZaycevProvider(ServiceProvider):
             return t._current_children("zaycev", object_id)
 
         # ---- мои поиски (артисты) ----
-        if object_id == ZY_SAVED:
+        if object_id in (ZY_SAVED, ZY_FAV):
             out = []
-            for s in t.zy_saved_searches():
+            src = t.site_favorites("zaycev") if object_id == ZY_FAV else t.zy_saved_searches()
+            for s in src:
                 if s.get("type") == "artist":
                     out.append(t._container(
-                        f"{ZY_ARTIST_PREFIX}{s['artist_id']}", ZY_SAVED, f"👤 {s['title']}", 0,
+                        f"{ZY_ARTIST_PREFIX}{s['artist_id']}", object_id, f"👤 {s['title']}", 0,
                     ))
             return out
 
@@ -167,7 +169,7 @@ class ZaycevProvider(ServiceProvider):
     # ------------------------------------------------------------ помощники
 
     def _artist_title(self, aid: str) -> str:
-        for s in self.t.zy_saved_searches():
+        for s in list(self.t.zy_saved_searches()) + list(self.t.site_favorites("zaycev")):
             if s.get("artist_id") == aid and s.get("title"):
                 return f"Zaycev · {s['title']}"
         return f"Zaycev · артист {aid}"

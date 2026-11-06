@@ -34,8 +34,7 @@ class AknigaProvider(ServiceProvider):
             return self.t._current_children("akniga", object_id)
 
         if object_id == AK_SAVED:
-            with self.t._ak_saved_lock:
-                saved = list(self.t._ak_saved)
+            saved = self.t._hist(self.t._ak_saved, self.t._ak_saved_lock)
             return [
                 self.t._container(
                     f"{AK_BOOK_PREFIX}{s['slug']}",

@@ -35,6 +35,7 @@ class YandexProvider(ServiceProvider):
                 self.t._container(f"{YA_LP_PAGE_PREFIX}kids", YANDEX, "Детям", 1),
                 self.t._container(YA_SAVED, YANDEX, "🔍 Мои поиски",
                                 len(self.t.ya_saved_searches())),
+                self.t._container(YA_FAV, YANDEX, "⭐ Избранное", len(self.t.site_favorites("yandex"))),
                 self.t._container(YA_WAVE, YANDEX, "🌊 Моя волна", FLOW_MAX_CACHE),
                 self.t._container(YA_CATALOG, YANDEX, "📂 Каталог", n_sec),
             ])
@@ -153,22 +154,22 @@ class YandexProvider(ServiceProvider):
             self._ya_cache_current(pl_title, tracks)
             return out
 
-        if object_id == YA_SAVED:
-            with self.t._ya_saved_lock:
-                saved = list(self.t._ya_saved)
+        if object_id in (YA_SAVED, YA_FAV):
+            saved = (self.t.site_favorites("yandex") if object_id == YA_FAV
+                     else self.t._hist(self.t._ya_saved, self.t._ya_saved_lock))
             out = []
             for s in saved:
                 if s.get("type") == "artist":
                     out.append(self.t._container(
                         f"{YA_ARTIST_PREFIX}{s['artist_id']}",
-                        YA_SAVED,
+                        object_id,
                         f"👤 {s['title']}",
                         0,
                     ))
                 elif s.get("type") == "album":
                     out.append(self.t._container(
                         f"{YA_ALBUM_PREFIX}{s['album_id']}",
-                        YA_SAVED,
+                        object_id,
                         f"💿 {s['title']}",
                         0,
                     ))

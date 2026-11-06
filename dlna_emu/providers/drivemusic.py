@@ -23,6 +23,7 @@ class DriveMusicProvider(ServiceProvider):
             items.extend([
                 self.t._container(DM_SAVED, DRIVEMUSIC, "🔍 Мои поиски",
                                 len(self.t.dm_saved_searches())),
+                self.t._container(DM_FAV, DRIVEMUSIC, "⭐ Избранное", len(self.t.site_favorites("drivemusic"))),
                 self.t._container(DM_NEW, DRIVEMUSIC, "🔥 Новинки", 0),
                 self.t._container(DM_HITS, DRIVEMUSIC, "🏆 Хиты (чарт)",
                                 len(self.t.drivemusic.list_hits(fetch=False))),
@@ -37,15 +38,15 @@ class DriveMusicProvider(ServiceProvider):
         if object_id == "drivemusic:current" or object_id.startswith("drivemusic:current:"):
             return self.t._current_children("drivemusic", object_id)
 
-        if object_id == DM_SAVED:
-            with self.t._dm_saved_lock:
-                saved = list(self.t._dm_saved)
+        if object_id in (DM_SAVED, DM_FAV):
+            saved = (self.t.site_favorites("drivemusic") if object_id == DM_FAV
+                     else self.t._hist(self.t._dm_saved, self.t._dm_saved_lock))
             out = []
             for s in saved:
                 if s.get("type") == "artist":
                     out.append(self.t._container(
                         f"{DM_ARTIST_PREFIX}{s['artist_id']}",
-                        DM_SAVED,
+                        object_id,
                         f"👤 {s['title']}",
                         0,
                     ))

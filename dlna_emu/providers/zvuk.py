@@ -33,6 +33,7 @@ class ZvukProvider(ServiceProvider):
                 self.t._container(ZV_GENRES, ZVUK, "📂 Жанры", n_genres),
                 self.t._container(ZV_SAVED, ZVUK, "🔍 Мои поиски",
                                 len(self.t.zv_saved_searches())),
+                self.t._container(ZV_FAV, ZVUK, "⭐ Избранное", len(self.t.site_favorites("zvuk"))),
             ])
             return items
         if object_id == "zvuk:current" or object_id.startswith("zvuk:current:"):
@@ -234,29 +235,29 @@ class ZvukProvider(ServiceProvider):
                 ))
             return out
 
-        if object_id == ZV_SAVED:
-            with self.t._zv_saved_lock:
-                saved = list(self.t._zv_saved)
+        if object_id in (ZV_SAVED, ZV_FAV):
+            saved = (self.t.site_favorites("zvuk") if object_id == ZV_FAV
+                     else self.t._hist(self.t._zv_saved, self.t._zv_saved_lock))
             out = []
             for s in saved:
                 if s.get("type") == "artist":
                     out.append(self.t._container(
                         f"{ZV_ARTIST_PREFIX}{s['artist_id']}",
-                        ZV_SAVED,
+                        object_id,
                         f"👤 {s['title']}",
                         0,
                     ))
                 elif s.get("type") == "album":
                     out.append(self.t._container(
                         f"{ZV_ALBUM_PREFIX}{s['album_id']}",
-                        ZV_SAVED,
+                        object_id,
                         f"💿 {s['title']}",
                         0,
                     ))
                 elif s.get("type") == "playlist":
                     out.append(self.t._container(
                         f"{ZV_PL_PREFIX}{s['playlist_id']}",
-                        ZV_SAVED,
+                        object_id,
                         f"📂 {s['title']}",
                         0,
                     ))

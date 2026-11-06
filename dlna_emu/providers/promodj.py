@@ -35,6 +35,9 @@ class PromoDjProvider(ServiceProvider):
                 n_saved = len(self.t.pd_saved_searches())
                 if n_saved:
                     items.append(self.t._container(PD_SAVED, PROMODJ, "🔍 Мои поиски", n_saved))
+                n_fav = len(self.t.site_favorites("promodj"))
+                if n_fav:
+                    items.append(self.t._container(PD_FAV, PROMODJ, "⭐ Избранное", n_fav))
             except Exception as e:
                 log.warning("promodj saved: %s", e)
             try:
@@ -55,12 +58,13 @@ class PromoDjProvider(ServiceProvider):
         if object_id == "promodj:current" or object_id.startswith("promodj:current:"):
             return self.t._current_children("promodj", object_id)
 
-        if object_id == PD_SAVED:
+        if object_id in (PD_SAVED, PD_FAV):
             out = []
-            for s in self.t.pd_saved_searches():
+            src = self.t.site_favorites("promodj") if object_id == PD_FAV else self.t.pd_saved_searches()
+            for s in src:
                 slug = s.get("slug") or s.get("id") or ""
                 title = s.get("title") or slug
-                out.append(self.t._container(f"{PD_USER_PREFIX}{slug}", PD_SAVED, title, 1))
+                out.append(self.t._container(f"{PD_USER_PREFIX}{slug}", object_id, title, 1))
             return out
 
         if object_id.startswith(PD_USER_PREFIX):
